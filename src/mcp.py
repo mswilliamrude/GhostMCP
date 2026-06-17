@@ -27,6 +27,7 @@ from .proxy.manager import ProxyManager
 from .proxy.fingerprint import get_headers
 from .recon.certs import CertReport, inspect_cert
 from .recon.hashes import HashLookup, detect_hash_type, HashReport
+from .recon.render import render_page, RenderReport
 from .recon.subdomains import enumerate_subdomains, dns_brute_force, SubdomainReport
 from .recon.vulns import lookup_cve, search_cves, check_package, CVEResult, PackageVulnResult
 from .recon.threats import threat_lookup, ThreatReport
@@ -983,6 +984,80 @@ async def ghost_cert(
 
     report = await inspect_cert(host, port=port)
     return _format_cert_report(report)
+
+
+# ---------------------------------------------------------------------------
+# Headless browser rendering tool
+# ---------------------------------------------------------------------------
+
+@mcp.tool(
+    name="ghost_render",
+    description=(
+        "Render a web page using headless Chromium browser. Captures the rendered DOM "
+        "(after JavaScript execution), console.log/error output, and uncaught JS errors. "
+        "Essential for debugging SPAs (Vue, React, Angular) where raw HTML contains "
+        "unresolved template syntax."
+    ),
+    parameters={
+        "url": {"type": "string", "description": "URL to render."},
+        "wait": {"type": "integer", "description": "Milliseconds to wait for JS execution (default 5000).", "default": 5000},
+        "execute": {"type": "string", "description": "Optional JavaScript to run after page loads."},
+        "extract": {"type": "string", "description": "What to return: dom, console, errors, all (default all).", "default": "all"},
+        "screenshot": {"type": "boolean", "description": "Take a screenshot (saved to /tmp).", "default": False},
+    },
+)
+async def ghost_render(
+    url: str,
+    wait: int = 5000,
+    execute: Optional[str] = None,
+    extract: str = "all",
+    screenshot: bool = False,
+) -> str:
+    """Render a page with headless browser and capture console output."""
+    report = await render_page(
+        url=url,
+        wait_ms=wait,
+        execute_js=execute,
+        capture_screenshot=screenshot,
+    )
+
+    if report.error:
+        return f"Render error: {report.error}"
+
+    lines = []
+
+    if extract in ("all", "dom"):
+        lines.append(f"=== Rendered Page: {report.title} ===")
+        lines.append(f"URL: {report.final_url or report.url}")
+        lines.append(f"Status: {report.status_code}")
+        lines.append(f"Load time: {report.load_time_ms}ms")
+        lines.append("")
+        # Truncate rendered HTML for context window sanity
+        html = report.rendered_html
+        if len(html) > 30000:
+            html = html[:30000] + "\n\n[... truncated at 30KB ...]"
+        lines.append(html)
+
+    if extract in ("all", "console"):
+        if report.console_log or report.console_errors:
+            lines.append("\n=== Console Output ===")
+            for msg in report.console_log:
+                lines.append(f"  {msg}")
+            for msg in report.console_errors:
+                lines.append(f"  ** {msg}")
+
+    if extract in ("all", "errors"):
+        if report.js_errors:
+            lines.append("\n=== JavaScript Errors ===")
+            for err in report.js_errors:
+                lines.append(f"  ERROR: {err}")
+        elif extract == "errors":
+            lines.append("No JavaScript errors detected.")
+
+    if report.screenshot_path and screenshot:
+        lines.append(f"\nScreenshot saved: {report.screenshot_path}")
+
+    return "\n".join(lines) if lines else "Page rendered successfully but no content extracted."
 
 
 # ---------------------------------------------------------------------------

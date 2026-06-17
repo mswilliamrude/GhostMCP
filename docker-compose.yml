@@ -1,0 +1,21 @@
+version: "3.8"
+services:
+  ghostmcp:
+    build: .
+    container_name: ghostmcp
+    stdin_open: true
+    environment:
+      - GHOST_PARANOIA=cautious
+      - GHOST_MIN_DELAY=2.0
+      # Optional API keys:
+      # - SERPER_API_KEY=
+      # - VT_API_KEY=
+    volumes:
+      - /tmp/ghostmcp_ratelimit:/tmp/ghostmcp_ratelimit
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
