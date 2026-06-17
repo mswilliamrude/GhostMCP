@@ -106,6 +106,8 @@ cmd_build() {
             no_cache_flag="--no-cache"
         fi
 
+        # MSYS2: az can't handle /c/Users/... paths — use "." from within SRC_DIR
+        pushd "$SRC_DIR" >/dev/null
         az acr build \
             --registry "$GHOST_ACR_NAME" \
             --image "${GHOST_ACR_IMAGE}:latest" \
@@ -116,7 +118,8 @@ cmd_build() {
             --build-arg GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown") \
             --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
             $no_cache_flag \
-            "$SRC_DIR"
+            .
+        popd >/dev/null
         echo "[INFO] ACR build complete: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest"
     else
         echo "[INFO] Building locally: $GHOST_IMAGE from $SRC_DIR"
