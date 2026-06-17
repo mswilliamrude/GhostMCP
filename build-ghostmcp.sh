@@ -14,7 +14,8 @@
 #   build-ghostmcp shell              Interactive bash inside container
 #   build-ghostmcp sync               Copy local src/ into running container
 #   build-ghostmcp pull               Copy container /app/src/ to local src/
-#   build-ghostmcp deploy             Push to ACR and deploy (future)
+#   build-ghostmcp deploy             Build + deploy to Azure Container Instances
+#   build-ghostmcp teardown           Delete ACI container group
 #
 # Environment:
 #   GHOST_IMAGE         Docker image name (default: ghostmcp:latest)
@@ -24,11 +25,38 @@
 
 set -euo pipefail
 
+# --- Platform detection ---
+detect_platform() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) echo "msys2" ;;
+        Linux) echo "linux" ;;
+        Darwin) echo "macos" ;;
+        *) echo "unknown" ;;
+    esac
+}
+PLATFORM=$(detect_platform)
+
+# Check for Azure CLI
+HAS_AZ=false
+if command -v az &>/dev/null; then
+    HAS_AZ=true
+fi
+
 # --- Configuration ---
 GHOST_IMAGE="${GHOST_IMAGE:-ghostmcp:latest}"
 GHOST_CONTAINER="${GHOST_CONTAINER:-ghostmcp-dev}"
 GHOST_SSH_PORT="${GHOST_SSH_PORT:-2222}"
 GHOST_ACR="${GHOST_ACR:-wdrcentralus.azurecr.io}"
+
+# --- ACR / ACI configuration ---
+GHOST_ACR_NAME="${GHOST_ACR_NAME:-wdrcentralus}"
+GHOST_ACR_SERVER="${GHOST_ACR_NAME}.azurecr.io"
+GHOST_ACR_IMAGE="${GHOST_ACR_IMAGE:-ghostmcp}"
+GHOST_SUBSCRIPTION="${GHOST_SUBSCRIPTION:-AEPSovereign_EncryptedTransport_Sandbox}"
+GHOST_RESOURCE_GROUP="${GHOST_RESOURCE_GROUP:-aet-apt-localdev-es2}"
+GHOST_LOCATION="${GHOST_LOCATION:-centralus}"
+GHOST_SUBNET_ID="${GHOST_SUBNET_ID:-/subscriptions/.../subnets/aci-subnet}"  # placeholder
+GHOST_CONTAINER_GROUP="${GHOST_CONTAINER_GROUP:-ghostmcp-app}"
 
 # --- Resolve source directory ---
 resolve_src_dir() {
@@ -71,9 +99,34 @@ container_exists() {
 # --- Commands ---
 
 cmd_build() {
-    echo "[INFO] Building $GHOST_IMAGE from $SRC_DIR"
-    sudo docker build -t "$GHOST_IMAGE" "$SRC_DIR"
-    echo "[INFO] Build complete: $(sudo docker images "$GHOST_IMAGE" --format '{{.Size}}')"
+    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+        echo "[INFO] Building via Azure Container Registry (az acr build)..."
+        local no_cache_flag=""
+        if [ "${2:-}" = "--no-cache" ]; then
+            no_cache_flag="--no-cache"
+        fi
+
+        az acr build \
+            --registry "$GHOST_ACR_NAME" \
+            --image "${GHOST_ACR_IMAGE}:latest" \
+            --subscription "$GHOST_SUBSCRIPTION" \
+            --platform "linux" \
+            --file "Dockerfile" \
+            --build-arg GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") \
+            --build-arg GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown") \
+            --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            $no_cache_flag \
+            "$SRC_DIR"
+        echo "[INFO] ACR build complete: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest"
+    else
+        echo "[INFO] Building locally: $GHOST_IMAGE from $SRC_DIR"
+        sudo docker build -t "$GHOST_IMAGE" \
+            --build-arg GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") \
+            --build-arg GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown") \
+            --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            "$SRC_DIR"
+        echo "[INFO] Build complete: $(sudo docker images "$GHOST_IMAGE" --format '{{.Size}}')"
+    fi
 }
 
 cmd_run() {
@@ -235,15 +288,109 @@ cmd_pull() {
 }
 
 cmd_deploy() {
-    echo "[INFO] === Deploy to Azure Container Registry ==="
-    echo ""
-    echo "Steps:"
-    echo "  1. az acr login --name $GHOST_ACR"
-    echo "  2. docker tag $GHOST_IMAGE ${GHOST_ACR}/ghostmcp:latest"
-    echo "  3. docker push ${GHOST_ACR}/ghostmcp:latest"
-    echo ""
-    echo "Not implemented yet — run these manually when ready for release."
-    echo "Or add ACI deployment YAML here (same pattern as build-unimind.sh)."
+    if [ "$HAS_AZ" != true ]; then
+        echo "[ERROR] Azure CLI (az) not found. Install: https://aka.ms/installazurecli"
+        exit 1
+    fi
+
+    echo "[INFO] Deploying GhostMCP to ACI ($GHOST_CONTAINER_GROUP)..."
+
+    # Get ACR credentials
+    local ACR_PW
+    ACR_PW=$(az acr credential show --name "$GHOST_ACR_NAME" --subscription "$GHOST_SUBSCRIPTION" --query "passwords[0].value" -o tsv)
+
+    local DEPLOY_YAML="./deploy-ghostmcp.yaml"
+    trap "rm -f '$DEPLOY_YAML'" RETURN
+
+    cat > "$DEPLOY_YAML" <<EOF
+apiVersion: 2021-09-01
+location: ${GHOST_LOCATION}
+name: ${GHOST_CONTAINER_GROUP}
+type: Microsoft.ContainerInstance/containerGroups
+properties:
+  osType: Linux
+  subnetIds:
+    - id: ${GHOST_SUBNET_ID}
+  imageRegistryCredentials:
+    - server: ${GHOST_ACR_SERVER}
+      username: ${GHOST_ACR_NAME}
+      password: ${ACR_PW}
+  containers:
+    - name: ghostmcp
+      properties:
+        image: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest
+        ports:
+          - port: 8080
+            protocol: TCP
+          - port: 22
+            protocol: TCP
+        resources:
+          requests:
+            cpu: 1
+            memoryInGB: 2
+        environmentVariables:
+          - name: GHOST_PARANOIA
+            value: "cautious"
+          - name: GHOST_MIN_DELAY
+            value: "2.0"
+          - name: GHOST_MODE
+            value: "server"
+  ipAddress:
+    type: Private
+    ports:
+      - port: 8080
+        protocol: TCP
+      - port: 22
+        protocol: TCP
+EOF
+
+    az container delete \
+        --resource-group "$GHOST_RESOURCE_GROUP" \
+        --subscription "$GHOST_SUBSCRIPTION" \
+        --name "$GHOST_CONTAINER_GROUP" \
+        --yes 2>/dev/null || true
+
+    az container create \
+        --resource-group "$GHOST_RESOURCE_GROUP" \
+        --subscription "$GHOST_SUBSCRIPTION" \
+        --file "$DEPLOY_YAML"
+
+    echo "[INFO] Deployed. Waiting for container to start..."
+
+    # Wait loop
+    for i in $(seq 1 30); do
+        state=$(az container show \
+            --resource-group "$GHOST_RESOURCE_GROUP" \
+            --subscription "$GHOST_SUBSCRIPTION" \
+            --name "$GHOST_CONTAINER_GROUP" \
+            --query 'instanceView.state' -o tsv 2>/dev/null)
+        if [ "$state" = "Running" ]; then
+            local ip=$(az container show \
+                --resource-group "$GHOST_RESOURCE_GROUP" \
+                --subscription "$GHOST_SUBSCRIPTION" \
+                --name "$GHOST_CONTAINER_GROUP" \
+                --query 'ipAddress.ip' -o tsv)
+            echo "[INFO] GhostMCP running at $ip"
+            return
+        fi
+        echo -n "."
+        sleep 5
+    done
+    echo " timeout"
+}
+
+cmd_teardown() {
+    if [ "$HAS_AZ" != true ]; then
+        echo "[ERROR] Azure CLI (az) not found"
+        exit 1
+    fi
+    echo "[INFO] Tearing down $GHOST_CONTAINER_GROUP..."
+    az container delete \
+        --resource-group "$GHOST_RESOURCE_GROUP" \
+        --subscription "$GHOST_SUBSCRIPTION" \
+        --name "$GHOST_CONTAINER_GROUP" \
+        --yes
+    echo "[INFO] Deleted."
 }
 
 # --- Main dispatch ---
@@ -261,6 +408,7 @@ case "${1:-help}" in
     sync)     cmd_sync ;;
     pull)     cmd_pull ;;
     deploy)   cmd_deploy ;;
+    teardown)  cmd_teardown ;;
     help|*)
         echo "build-ghostmcp — Build, run, test, and manage GhostMCP container"
         echo ""
@@ -279,12 +427,16 @@ case "${1:-help}" in
         echo "  shell     Interactive bash inside container"
         echo "  sync      Push local src/ + tests/ into container"
         echo "  pull      Pull container src/ + tests/ to local"
-        echo "  deploy    Show ACR deployment instructions"
+        echo "  deploy    Build + deploy to Azure Container Instances"
+        echo "  teardown  Delete ACI container group"
         echo ""
         echo "Environment:"
         echo "  GHOST_IMAGE=$GHOST_IMAGE"
         echo "  GHOST_CONTAINER=$GHOST_CONTAINER"
         echo "  GHOST_SSH_PORT=$GHOST_SSH_PORT"
         echo "  GHOST_ACR=$GHOST_ACR"
+        echo "  GHOST_ACR_NAME=$GHOST_ACR_NAME"
+        echo "  GHOST_SUBSCRIPTION=$GHOST_SUBSCRIPTION"
+        echo "  GHOST_CONTAINER_GROUP=$GHOST_CONTAINER_GROUP"
         ;;
 esac

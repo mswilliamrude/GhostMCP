@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Any, Callable, Optional
 
 import httpx
@@ -1061,12 +1062,62 @@ async def ghost_render(
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# HTTP health endpoint + entry point
 # ---------------------------------------------------------------------------
 
+_start_time = time.time()
+GHOST_VERSION = "0.3.5"
+
+
+async def _health_handler(request):
+    """Simple health check — returns JSON."""
+    from starlette.responses import JSONResponse
+
+    uptime = int(time.time() - _start_time)
+    tool_count = len(mcp._tools)
+
+    # Check Playwright availability
+    playwright_ok = False
+    try:
+        from playwright.async_api import async_playwright
+        playwright_ok = True
+    except ImportError:
+        pass
+
+    body = {
+        "status": "healthy",
+        "version": GHOST_VERSION,
+        "git_commit": os.environ.get("GHOST_GIT_COMMIT", "unknown"),
+        "git_branch": os.environ.get("GHOST_GIT_BRANCH", "unknown"),
+        "build_time": os.environ.get("GHOST_BUILD_TIME", "unknown"),
+        "tools": tool_count,
+        "playwright": playwright_ok,
+        "paranoia": os.environ.get("GHOST_PARANOIA", "cautious"),
+        "uptime_seconds": uptime,
+    }
+    return JSONResponse(body)
+
+
 def main() -> None:
-    """Run GhostMCP as an MCP server (stdio transport)."""
-    asyncio.run(mcp.run_stdio())
+    """Run GhostMCP as an MCP server (stdio) or HTTP server."""
+    mode = os.environ.get("GHOST_MODE", "stdio")
+
+    if mode == "server":
+        # HTTP server mode — serves health endpoint + could serve MCP over HTTP in future
+        import uvicorn
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        app = Starlette(routes=[
+            Route("/health", _health_handler, methods=["GET"]),
+        ])
+
+        port = int(os.environ.get("GHOST_PORT", "8080"))
+        print(f"[GhostMCP] Starting HTTP server on port {port} (health endpoint)")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    else:
+        # Default: stdio MCP server
+        asyncio.run(mcp.run_stdio())
 
 
 if __name__ == "__main__":
