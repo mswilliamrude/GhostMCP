@@ -491,3 +491,129 @@ async def verify_email(address: str) -> EmailVerifyResult:
   - cautious: rotating source IP, realistic HELO
   - ghost: Tor, minimal probes, longer delays
   - midnight: single probe then disconnect, maximum stealth
+
+## Sprint 6: Wireless / Bluetooth Intelligence (WiGLE)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| WiGLE API integration | Pending | Free account, API key required |
+| BSSID search (WiFi AP lookup) | Pending | Location + SSID + encryption + sightings |
+| SSID search (find all APs with name) | Pending | Rogue AP detection, corporate tracking |
+| Bluetooth device search | Pending | BLE device location history |
+| GPS bounding box search | Pending | "What networks exist in this area?" |
+| OUI/MAC manufacturer lookup | Pending | Free, IEEE database (no API needed) |
+| Sighting timeline (device movement) | Pending | Where has this device been seen over time? |
+| Nearby network correlation | Pending | What else was seen at same time/place? |
+| Mylnikov BSSID geolocation | Pending | Free, no key backup for location |
+
+### CLI Interface
+```
+ghost wireless --bssid AA:BB:CC:DD:EE:FF     # WiFi AP lookup + location history
+ghost wireless --ssid "CorpNet"              # Find all APs broadcasting this name
+ghost wireless --bluetooth AA:BB:CC:DD:EE:FF # Bluetooth device tracking
+ghost wireless --area 30.27,-97.74 --radius 1km  # What's in this area?
+ghost wireless --oui AA:BB:CC               # Manufacturer lookup (free, local)
+```
+
+### API Endpoints
+- WiGLE: `https://api.wigle.net/api/v2/network/search` (free key: WIGLE_API_KEY)
+- WiGLE Bluetooth: `https://api.wigle.net/api/v2/bluetooth/search`
+- Mylnikov (backup): `https://api.mylnikov.org/geolocation/wifi?bssid={bssid}` (no key)
+- IEEE OUI: local database lookup (download once, query offline)
+
+### Use Cases
+- Track device movement over time (BSSID seen in multiple cities)
+- Detect rogue APs (corporate SSID appearing in unexpected locations)
+- Correlate wireless presence with physical location
+- Identify device manufacturer from MAC prefix
+- Map wireless infrastructure for a physical location
+
+## Sprint 6b: Cellular Intelligence (IMSI/IMEI/Tower)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| MCC/MNC decode (IMSI → country + carrier) | Pending | Free: mccmnc Python package, offline DB |
+| OpenCelliD tower geolocation | Pending | Free with key: tower ID → GPS coordinates |
+| IMEI → device model (TAC lookup) | Pending | Free: offline TAC database |
+| IMEI Luhn validation | Pending | Local computation, no API |
+| Cell tower area search | Pending | "What towers are near this location?" |
+| OUI/manufacturer from IMEI TAC | Pending | GSMA TAC prefix → brand/model |
+| HLR lookup (is number active?) | Pending | PAID: hlrlookup.com, Telnyx, various |
+| Number portability check | Pending | PAID: carrier APIs |
+| Google Geolocation API (tower → coords) | Pending | Free tier available |
+
+### CLI Interface
+```
+ghost cellular --imsi 310260123456789       # Decode IMSI → country + carrier
+ghost cellular --imei 353456789012345       # IMEI → device model + validation
+ghost cellular --tower 310 260 1234 5678    # Cell tower → GPS location
+ghost cellular --area 30.27,-97.74 --radius 5km  # Towers in area
+ghost cellular --mcc-mnc 310 260            # Just carrier lookup
+ghost cellular --validate-imei 353456789012345  # Luhn check only
+```
+
+### Example Output
+```
+ghost cellular --imsi 310260123456789
+
+IMSI Analysis: 310260123456789
+══════════════════════════════════════════
+MCC:          310 → United States
+MNC:          260 → T-Mobile USA
+MSIN:         123456789 (subscriber ID)
+Network:      T-Mobile US (GSM/LTE/5G)
+Network type: Commercial mobile
+
+Carrier info:
+  Brand:      T-Mobile
+  Country:    United States
+  Technology: GSM 850/1900, LTE, 5G NR
+  Status:     Active network
+
+Note: Live status (active/roaming/ported) requires HLR lookup (paid API)
+
+Provenance:
+  Source:     mccmnc database (ITU/GSMA derived)
+  Updated:    2024-02 (database version)
+  Method:     Offline MCC/MNC prefix matching
+```
+
+### Free Resources
+- **mccmnc** Python package: `pip install mccmnc` — offline MCC/MNC database
+  ```python
+  from mccmnc import find_matches
+  results = find_matches(mcc="310", mnc="260")
+  # → [{'mcc': '310', 'mnc': '260', 'operator': 'T-Mobile USA', 'country': 'US'}]
+  ```
+- **OpenCelliD**: `https://opencellid.org/` — free account + API token
+  - Endpoint: `https://us1.unwiredlabs.com/v2/process.php` (UnwiredLabs hosts it)
+  - Free tier: limited lookups/day
+  - Data: cell_id + lac + mcc + mnc → latitude, longitude, accuracy
+- **TAC database**: downloadable from GSMA or community mirrors
+  - First 8 digits of IMEI → device manufacturer + model
+  - Python: split IMEI, validate Luhn, lookup TAC in local SQLite
+- **Google Geolocation API**: `https://www.googleapis.com/geolocation/v1/geolocate`
+  - Free tier available (requires API key)
+  - Input: cell tower IDs → output: GPS coordinates
+- **mcc-mnc-list** (GitHub): community-maintained CSV of all MCC/MNC pairs
+  - `https://github.com/musalbas/mcc-mnc-table`
+
+### Paid APIs (Optional)
+- **HLR Lookup** (is number active/roaming/ported):
+  - hlrlookup.com — per-query pricing
+  - Telnyx — carrier-grade, enterprise pricing
+  - Vonage (Nexmo) Number Insight — tiered free/paid
+  - Twilio Lookup — $0.005/lookup for carrier info
+  - Key env var: HLR_API_KEY + HLR_PROVIDER
+- **Number Portability**:
+  - Carrier-specific APIs
+  - Some HLR providers include porting status
+
+### Legal / Ethical Notes
+- MCC/MNC decoding: completely legal (public ITU data)
+- IMEI lookup: legal (public TAC database)
+- OpenCelliD: legal (community-contributed data)
+- HLR lookup: LEGAL but requires legitimate purpose (fraud prevention, KYC)
+- SS7/Diameter interception: ILLEGAL without carrier authorization
+- IMSI catching (Stingray): ILLEGAL without law enforcement authority
+- GhostMCP will NEVER implement active cellular interception
