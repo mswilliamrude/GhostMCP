@@ -387,3 +387,107 @@ with socket.create_connection((host, port)) as sock:
 - `socket` (stdlib)
 - `cryptography` (optional, for detailed x509 parsing + chain validation)
 - No external services needed — direct connection to target
+
+## Sprint 4b: Email Verification (SMTP Probing)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| MX record lookup for domain | Pending | dnspython → find mail servers |
+| SMTP connect + banner grab | Pending | asyncio SMTP, identify server software |
+| VRFY command probe | Pending | Direct user verification (often disabled) |
+| RCPT TO probe | Pending | Send MAIL FROM + RCPT TO, check 250 vs 550 |
+| Catch-all detection | Pending | Test with random address — if accepts all, can't verify |
+| Rate limiting / politeness | Pending | Don't hammer mail servers, 1 probe per 5s |
+| Multiple address batch check | Pending | Verify list of addresses against same domain |
+| SPF/DKIM/DMARC record check | Pending | DNS-based email auth posture |
+| Disposable email detection | Pending | Check against known disposable domains list |
+
+### CLI Interface
+```
+ghost email verify user@example.com          # Single address verification
+ghost email verify --batch emails.txt        # Bulk verification
+ghost email mx example.com                   # MX records + mail server info
+ghost email auth example.com                 # SPF + DKIM + DMARC check
+ghost email disposable user@tempmail.xyz     # Is this a throwaway?
+```
+
+### Example Output
+```
+ghost email verify admin@example.com
+
+Email Verification: admin@example.com
+══════════════════════════════════════════════
+Domain:       example.com
+MX Records:   mx1.example.com (pri 10), mx2.example.com (pri 20)
+Mail Server:  mx1.example.com:25
+Banner:       220 mx1.example.com ESMTP Postfix
+
+Verification:
+  VRFY:       disabled (252 response)
+  RCPT TO:    250 OK ✅ — address EXISTS
+  Catch-all:  No (random address rejected with 550)
+
+Verdict:      VALID — address exists on this mail server
+
+Email Auth Posture:
+  SPF:        v=spf1 include:_spf.google.com -all ✅
+  DKIM:       selector1._domainkey.example.com → found ✅
+  DMARC:      v=DMARC1; p=reject; rua=mailto:dmarc@example.com ✅
+
+Provenance:
+  Source:     Direct SMTP connection to mx1.example.com:25
+  Checked:    2024-02-27T15:45:00Z (live probe)
+  Method:     RCPT TO verification (VRFY disabled on server)
+```
+
+### SMTP Probe Flow
+```python
+# Pseudocode — async SMTP probing
+async def verify_email(address: str) -> EmailVerifyResult:
+    user, domain = address.split('@')
+    
+    # Step 1: Find MX
+    mx_records = await dns_lookup(domain, 'MX')
+    mx_host = mx_records[0].exchange
+    
+    # Step 2: Connect
+    reader, writer = await asyncio.open_connection(mx_host, 25)
+    banner = await reader.readline()  # 220 greeting
+    
+    # Step 3: HELO
+    writer.write(b'HELO ghost.local\r\n')
+    await reader.readline()  # 250
+    
+    # Step 4: Try VRFY first
+    writer.write(f'VRFY {address}\r\n'.encode())
+    vrfy_resp = await reader.readline()
+    # 250 = exists, 252 = can't verify, 550 = doesn't exist
+    
+    # Step 5: RCPT TO probe (more reliable)
+    writer.write(b'MAIL FROM:<probe@ghost.local>\r\n')
+    await reader.readline()  # 250
+    writer.write(f'RCPT TO:<{address}>\r\n'.encode())
+    rcpt_resp = await reader.readline()
+    # 250 = exists, 550 = doesn't exist, 452 = try later
+    
+    # Step 6: Catch-all detection
+    writer.write(f'RCPT TO:<{random_string}@{domain}>\r\n'.encode())
+    catchall_resp = await reader.readline()
+    # If 250 → catch-all (can't trust RCPT TO results)
+    
+    # Step 7: QUIT
+    writer.write(b'QUIT\r\n')
+    writer.close()
+```
+
+### Ethics / Legality Notes
+- SMTP probing is a GRAY AREA — some servers consider it abuse
+- Always: use realistic HELO, don't probe same server > 5 times/hour
+- Never: actually SEND email, forge headers, or relay through the server
+- Respect 421/452 responses (server asking you to slow down)
+- Ghost/midnight modes: probe through Tor to avoid IP reputation damage
+- Paranoia level affects probe aggressiveness:
+  - casual: direct connection, real-ish HELO
+  - cautious: rotating source IP, realistic HELO
+  - ghost: Tor, minimal probes, longer delays
+  - midnight: single probe then disconnect, maximum stealth
