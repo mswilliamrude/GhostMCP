@@ -475,3 +475,93 @@ This tool searches publicly available information using the same mechanisms as a
 - Result caching in Redis
 - Knowledge graph integration (discovered facts → KG)
 - Docker deployment
+
+---
+
+## Result Provenance (Mandatory on All Intelligence)
+
+Every finding returned by GhostMCP MUST include provenance metadata.
+Not just the verdict — the SOURCE, TIMING, and REASON.
+
+### Required Fields Per Finding
+
+```python
+@dataclass
+class IntelFinding:
+    """A single intelligence finding with full provenance."""
+    claim: str              # "Domain distributes malware"
+    verdict: str            # "malicious" | "suspicious" | "clean" | "unknown"
+    confidence: float       # 0.0-1.0
+    source: str             # "URLhaus (Abuse.ch)"
+    source_url: str         # "https://urlhaus.abuse.ch/host/example.com/"
+    first_reported: str     # "2024-03-12T14:30:00Z" (when first added to source)
+    last_updated: str       # "2024-03-15T09:00:00Z" (when source last confirmed)
+    reason: str             # "2 active malware distribution URLs detected"
+    raw_data: dict          # Full API response for audit trail
+```
+
+### Example Output (Domain Reputation)
+
+```
+ghost domain sketchy-site.xyz --detail
+
+Domain: sketchy-site.xyz
+Overall Verdict: HIGH RISK (score: 72/100)
+
+Findings:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ⚠️  NEWLY REGISTERED                                                    │
+│ Source:    WHOIS (python-whois)                                         │
+│ URL:       https://who.is/whois/sketchy-site.xyz                       │
+│ Added:     2024-03-10 (4 days ago)                                     │
+│ Updated:   2024-03-14 (live query)                                     │
+│ Reason:    Domain registered < 30 days ago (created: 2024-03-10)       │
+│ Score:     +30                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 🔴 MALWARE DISTRIBUTION                                                │
+│ Source:    URLhaus (Abuse.ch)                                           │
+│ URL:       https://urlhaus.abuse.ch/host/sketchy-site.xyz/             │
+│ Added:     2024-03-12T14:30:00Z (first report)                         │
+│ Updated:   2024-03-14T09:15:00Z (last confirmed active)               │
+│ Reason:    2 active URLs distributing Emotet loader                    │
+│ Score:     +20                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 🟡 ABUSE REPORTS                                                        │
+│ Source:    AbuseIPDB                                                    │
+│ URL:       https://www.abuseipdb.com/check/185.x.x.x                  │
+│ Added:     2024-02-28 (first abuse report)                             │
+│ Updated:   2024-03-14 (47 reports in last 30 days)                     │
+│ Reason:    Hosting IP has 47 abuse reports (port scanning, spam, malware)│
+│ Score:     +15                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 🟡 ANTIVIRUS FLAGS                                                      │
+│ Source:    VirusTotal                                                   │
+│ URL:       https://www.virustotal.com/gui/domain/sketchy-site.xyz      │
+│ Added:     2024-03-11 (first scan)                                     │
+│ Updated:   2024-03-14 (last scan)                                      │
+│ Reason:    7/89 security vendors flag as malicious                     │
+│ Score:     +10                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Sources consulted: 6 | Findings: 4 | No data: PhishTank, OpenPhish
+```
+
+### Design Principles
+
+1. **Every claim needs a source** — never say "malicious" without citing WHO said it
+2. **Timestamps are mandatory** — when was this first reported? Is it still current?
+3. **Reasons are human-readable** — not just "flagged" but WHY it was flagged
+4. **Source URLs are clickable** — user can verify independently
+5. **Raw data preserved** — full API response stored for audit/forensics
+6. **Staleness matters** — a finding from 2 years ago ≠ a finding from today
+7. **Missing data is reported** — "PhishTank: no data" is useful (tells user it was checked)
+
+### Staleness Indicators
+
+| Age of Finding | Indicator | Meaning |
+|---|---|---|
+| < 24 hours | 🔴 FRESH | Actively confirmed |
+| 1-7 days | 🟠 RECENT | Likely still valid |
+| 7-30 days | 🟡 AGING | Verify before acting |
+| 30-90 days | ⚪ STALE | May be resolved |
+| > 90 days | ⬜ HISTORICAL | Context only, not actionable |
