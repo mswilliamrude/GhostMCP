@@ -1,726 +1,117 @@
-# Project Status
+# GhostMCP — Project Status
 
-## Sprint 0: Foundation (Current)
-**Goal:** Architecture, project structure, core engine
+**Last updated:** 2026-06-17
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Project structure | Done | Created 2026-06-16 |
-| Architecture design | Done | README.md + design docs |
-| Core search engine (base class) | Pending | |
-| DuckDuckGo engine | Pending | No API key, first engine |
-| Proxy manager (direct + Tor) | Pending | |
-| User-Agent rotation | Pending | |
-| Result parser (HTML) | Pending | |
-| CLI interface | Pending | |
-| Basic tests | Pending | |
+## Current State
 
-## Backlog
+- **Lines of code:** ~2,650 (src/) + ~1,800 (tests/)
+- **Test count:** 243 tests, 100% pass rate, 1.7s execution
+- **MCP tools:** 4 (ghost_search, ghost_dork, ghost_fetch, ghost_recon)
+- **Search engines:** 3 (DuckDuckGo Lite, Google HTML, Serper API)
+- **Dork templates:** 12 predefined OSINT templates
+- **Hash intelligence:** 4 services (CIRCL, MalwareBazaar, ThreatFox, VirusTotal)
 
-- Google scraper engine
-- Bing scraper engine
-- Serper.dev API engine
-- Dorking query builder + templates
-- MCP tool interface
-- Tor circuit rotation
-- SOCKS5 proxy pool
-- Residential proxy support
-- Fingerprint manager (JA3, headers)
-- Request jitter + timing
-- Content extraction (fetch + parse pages)
-- Subdomain enumeration
-- Certificate transparency search
-- Shodan integration
-- Censys integration
-- Technology fingerprinting
-- Docker containerization
-- Paranoia level presets
-- Rate limit detection + backoff
-- CAPTCHA detection + handling
+## Sprint History
+
+### Sprint 0: Foundation (Complete — 2026-06-16)
+
+| Task | Status |
+|------|--------|
+| Project structure + architecture docs | Done |
+| SearchResult dataclass + SearchEngine ABC | Done |
+| DuckDuckGo Lite engine (POST, 202 retry) | Done |
+| Proxy manager (direct + Tor routing) | Done |
+| Browser fingerprint rotation (4 paranoia levels) | Done |
+| CLI interface | Done |
+| Config system (env vars + YAML) | Done |
+| ParanoiaLevel enum (casual/cautious/ghost/midnight) | Done |
+| Unit tests for base + DDG + proxy + fingerprint | Done |
+
+### Sprint 1: Search + Dorking (Complete — 2026-06-16)
+
+| Task | Status |
+|------|--------|
+| Google HTML scraper (CAPTCHA + consent detection) | Done |
+| Serper.dev API engine (key detection, structured results) | Done |
+| Google dork query builder (6 operators) | Done |
+| Dork template library (12 templates) | Done |
+| MCP server (JSON-RPC 2.0 stdio, 4 tools) | Done |
+| Auto-fallback engine routing (Serper → Google → DDG) | Done |
+| ghost_search, ghost_dork, ghost_fetch, ghost_recon tools | Done |
+| Unit tests for Google, Serper, dorking, MCP | Done |
+
+### Sprint 2.5b: Hash Intelligence (Complete — 2026-06-16)
+
+| Task | Status |
+|------|--------|
+| Hash type auto-detection (MD5/SHA1/SHA256/SHA512) | Done |
+| Local file hash computation (MD5 + SHA1 + SHA256) | Done |
+| CIRCL NSRL lookup (known legitimate files) | Done |
+| MalwareBazaar lookup (malware family, tags, first seen) | Done |
+| ThreatFox lookup (C2, campaign associations) | Done |
+| VirusTotal lookup (AV detections, optional key) | Done |
+| Verdict logic (malicious/suspicious/clean/unknown) | Done |
+| Unit tests for hash detection, verdicts, mocked lookups | Done |
+
+### DDG Lite Fix (2026-06-17)
+
+| Task | Status |
+|------|--------|
+| Switch from html.duckduckgo.com → lite.duckduckgo.com | Done |
+| Rewrite parser for Lite table-based HTML format | Done |
+| Add 202 throttle retry with exponential backoff | Done |
+| Add proper browser User-Agent header | Done |
+| Filter duckduckgo.com internal links from results | Done |
+| Update test fixtures to DDG Lite format | Done |
+
+### Regression Test Suite Buildout (2026-06-17)
+
+| Task | Status |
+|------|--------|
+| conftest.py shared fixtures | Done |
+| test_base.py (16 tests) | Done |
+| test_dorking.py (33 tests) | Done |
+| test_fingerprint.py (22 tests) | Done |
+| test_google.py (21 tests) | Done |
+| test_hashes.py (29 tests) | Done |
+| test_mcp.py (12 tests) | Done |
+| test_proxy.py (19 tests) | Done |
+| test_serper.py (22 tests) | Done |
+| Full suite validation (243/243 pass) | Done |
+
+## Backlog (Prioritized)
+
+| Priority | Sprint | Capability |
+|----------|--------|-----------|
+| Next | 2 | Subdomain enumeration (crt.sh + DNS) |
+| Next | 2.5 | Vulnerability intelligence (NVD, OSV, CISA KEV, EPSS) |
+| Medium | 2c | TLS certificate inspection |
+| Medium | 3 | Browser automation (Playwright, Tier 1 fallback) |
+| Medium | 3.5 | Threat intelligence feeds (Abuse.ch, OTX, RansomWatch) |
+| Low | 4 | Domain reputation scoring |
+| Low | 4b | Email verification (SMTP probing) |
+| Future | 5c | People intelligence (phone/name/address) |
+| Future | 6 | Wireless/Bluetooth intelligence (WiGLE) |
+| Future | 6b | Cellular intelligence (IMSI/IMEI/tower) |
 
 ## Decisions Log
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-06-16 | Python standalone | Same stack as Unimind/NewHotness, asyncio for concurrent searches |
+| 2026-06-16 | Python standalone | Same stack as Unimind, asyncio for concurrent searches |
 | 2026-06-16 | Modular engine design | Swap/add engines without touching core |
-| 2026-06-16 | Paranoia levels | Configurable from casual to midnight — user chooses their risk profile |
-| 2026-06-16 | MCP + CLI dual interface | Callable from AI workflows AND standalone terminal use |
-| 2026-06-16 | DuckDuckGo first engine | No API key needed, good dorking support, privacy-friendly |
-| 2026-06-16 | Tor for ghost mode | Free, proven, circuit rotation for per-request IP changes |
-| 2026-06-16 | No external AI dependency | Pure search tool — doesn't need LLM to function |
-| 2026-06-16 | Classification: personal | Security research tool, personal use |
+| 2026-06-16 | DuckDuckGo first engine | No API key needed, privacy-friendly |
+| 2026-06-16 | MCP + CLI dual interface | Callable from AI workflows AND standalone terminal |
+| 2026-06-16 | Free by default, paid optional | Core works without any API keys |
+| 2026-06-16 | Mandatory provenance | Every finding includes source, URL, timestamp |
+| 2026-06-17 | DDG Lite over DDG HTML | html.duckduckgo.com returns 202; Lite endpoint works with POST |
+| 2026-06-17 | No browser automation yet | HTTP-only for now; Playwright deferred to Sprint 3 |
+| 2026-06-17 | ForensicsMCP is separate project | GhostMCP finds, ForensicsMCP analyzes in sandbox |
 
-## Sprint 2.5: Vulnerability Intelligence (Free APIs)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| NVD CVE lookup (NIST API) | Pending | Full CVE details + severity + CPE |
-| OSV.dev integration | Pending | Package vulns by ecosystem (Python/JS/Go/Rust) |
-| GitHub Advisories (GHSA) | Pending | Security advisories via GraphQL |
-| CISA KEV feed | Pending | Known actively exploited vulns (JSON) |
-| EPSS scoring | Pending | Exploit likelihood probability |
-| ExploitDB search | Pending | Public exploits + PoC lookup |
-| pip-audit integration | Pending | Scan requirements.txt / pyproject.toml |
-| Tech stack → CVE mapping | Pending | Fingerprint domain → find vulns for detected stack |
-
-### CLI Interface
-```
-ghost vuln python flask              # Package CVEs from OSV + GHSA
-ghost vuln cve CVE-2024-1234         # Full CVE details + EPSS + KEV status
-ghost vuln scan requirements.txt     # Audit Python dependencies
-ghost vuln domain example.com        # Tech fingerprint → known CVEs
-ghost vuln exploit CVE-2024-1234     # Check ExploitDB for public PoCs
-ghost vuln kev                       # List currently exploited vulns (CISA)
-```
-
-### Free API Endpoints
-- NVD: `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={id}`
-- OSV: `https://api.osv.dev/v1/query` (POST)
-- GHSA: GitHub GraphQL API (free token)
-- CISA KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
-- EPSS: `https://api.first.org/data/v1/epss?cve={id}`
-- ExploitDB: searchsploit CLI or `https://www.exploit-db.com/search?cve={id}`
-
-## Sprint 3.5: Threat Intelligence (Clearnet APIs, No Tor)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Abuse.ch integration (ThreatFox, URLhaus, MalwareBazaar, Feodo) | Pending | Malware C2s, IOCs, samples |
-| AlienVault OTX pulses | Pending | Community threat intel, IOC feeds |
-| RansomWatch/Ransomware.live | Pending | Ransomware victim tracking |
-| HIBP breach monitoring | Pending | Recent breach announcements |
-| CISA KEV active exploits | Pending | Already in Sprint 2.5, cross-ref here |
-| LeakIX integration | Pending | Exposed services, leaked data |
-| Malware sample lookup by CVE | Pending | MalwareBazaar + URLhaus → top 10 sample URLs |
-
-### CLI Interface
-```
-ghost threat live                    # Last 72hrs: Abuse.ch + OTX IOCs
-ghost threat ransomware              # Recent ransomware victim postings
-ghost threat breaches                # HIBP recent breaches
-ghost threat exploits-sold           # ThreatFox tagged "exploit" + OTX
-ghost threat campaign "emotet"       # Filter by malware family
-ghost threat samples CVE-2024-1234   # Top 10 malware sample URLs matching CVE
-```
-
-### API Keys (added to opencode.json environment)
-```json
-{
-  "environment": {
-    "OTX_API_KEY": "your-otx-key",
-    "HIBP_API_KEY": "your-hibp-key",
-    "LEAKIX_API_KEY": "your-leakix-key",
-    "SHODAN_API_KEY": "your-shodan-key"
-  }
-}
-```
-Keys are OPTIONAL — Abuse.ch, RansomWatch, CISA KEV work without keys.
-Keys stored in opencode.json environment section (same pattern as PERPLEXITY_API_KEY).
-
-### Free API Endpoints (no key)
-- Abuse.ch ThreatFox: `https://threatfox-api.abuse.ch/api/v1/`
-- Abuse.ch URLhaus: `https://urlhaus-api.abuse.ch/v1/`
-- Abuse.ch MalwareBazaar: `https://mb-api.abuse.ch/api/v1/`
-- Abuse.ch Feodo: `https://feodotracker.abuse.ch/downloads/ipblocklist.json`
-- RansomWatch: `https://raw.githubusercontent.com/joshhighet/ransomwatch/main/posts.json`
-- CISA KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
-
-### Malware Sample Lookup (CVE → Samples)
-```
-Query flow:
-  1. User asks: ghost threat samples CVE-2024-1234
-  2. GhostMCP queries MalwareBazaar: tag=CVE-2024-1234
-  3. Also queries URLhaus for URLs distributing exploits for that CVE
-  4. Returns top 10 sample URLs + hashes + first_seen dates
-  5. WARNING: these are LIVE malware URLs — display only, no auto-download
-```
-
----
-
-## Future: ForensicsMCP Integration (Sprint 5+)
-
-### Vision
-GhostMCP finds the threat → ForensicsMCP analyzes it in a sandbox.
-
-```
-GhostMCP                          ForensicsMCP (future)
-─────────                         ────────────────────
-ghost threat samples CVE-2024-x   
-  → top 10 malware URLs           → forensics sandbox submit <url>
-  → sample hashes                 → forensics detonate <hash>
-                                  → forensics analyze <sample>
-                                  
-                                  Sandbox environments:
-                                  • Windows 10/11 (VM)
-                                  • Linux (Ubuntu/RHEL)
-                                  • macOS (VM)
-                                  • iOS (emulator)
-                                  • Android (emulator)
-                                  
-                                  Analysis output:
-                                  • Network IOCs (C2, DNS, beacons)
-                                  • File system changes
-                                  • Registry modifications (Windows)
-                                  • Process tree
-                                  • Memory artifacts
-                                  • YARA rule matches
-                                  • MITRE ATT&CK mapping
-```
-
-### Architecture (Future)
-```
-┌─────────────┐     MCP calls      ┌──────────────────┐
-│  GhostMCP   │ ──────────────────→ │  ForensicsMCP    │
-│  (recon)    │                     │  (analysis)      │
-│             │ ←────────────────── │                  │
-│  "find it"  │     results         │  "understand it" │
-└─────────────┘                     └──────────────────┘
-                                           │
-                                    ┌──────┴──────┐
-                                    │  Sandbox    │
-                                    │  Cluster    │
-                                    │             │
-                                    │ Win │ Lin   │
-                                    │ Mac │ iOS   │
-                                    │ Android     │
-                                    └─────────────┘
-```
-
-### ForensicsMCP Design Notes (for future development)
-- Separate container/VM with isolated network
-- Samples NEVER execute on the analysis host — always in disposable VMs
-- VM snapshots reset after each detonation
-- Network traffic captured (pcap) + analyzed
-- Results fed back to Unimind knowledge store (lessons learned)
-- Integration: GhostMCP discovers → ForensicsMCP analyzes → Unimind stores intelligence
-- MITRE ATT&CK auto-mapping from observed behaviors
-- Classification: all forensics data at level 3+ (sensitive)
-
-## Sprint 2.5b: Hash Intelligence
-
-| Task | Status | Notes |
-|------|--------|-------|
-| CIRCL hashlookup (known file identification) | Pending | Free, no key, identifies legit vs unknown files |
-| MalwareBazaar hash lookup | Pending | Free, no key, malware family + tags |
-| ThreatFox hash search | Pending | Free, no key, C2 + campaign associations |
-| VirusTotal hash lookup | Pending | Free tier (4/min), 70+ AV results |
-| Hybrid Analysis hash lookup | Pending | Free with key, sandbox results |
-
-### CLI Interface
-```
-ghost hash <md5|sha1|sha256|sha384|sha512>    # Identify a file by hash
-ghost hash --file /path/to/file               # Compute hash + lookup
-ghost hash --batch hashes.txt                 # Bulk lookup from file
-```
-
-### Output Format
-```
-Hash: abc123def456...
-Type: SHA256
-
-CIRCL NSRL:      UNKNOWN (not a known legitimate file)
-MalwareBazaar:   Family=Emotet | Tags=[banker,trojan] | First seen: 2024-03-15
-ThreatFox:       C2=185.x.x.x:443 | Campaign=Emotet-E5
-VirusTotal:      47/72 detections | Name=Trojan.GenericKD.46789
-Hybrid Analysis: Threat score 95/100 | Sandbox: Win10-64
-
-Verdict: MALICIOUS (high confidence)
-```
-
-### Free API Endpoints (no key)
-- CIRCL: `https://hashlookup.circl.lu/lookup/sha256/{hash}`
-- MalwareBazaar: `POST https://mb-api.abuse.ch/api/v1/` body: `query=get_info&hash={hash}`
-- ThreatFox: `POST https://threatfox-api.abuse.ch/api/v1/` body: `query=search_hash&hash={hash}`
-
-### Keyed APIs (optional, adds depth)
-- VirusTotal: `GET https://www.virustotal.com/api/v3/files/{hash}` (VT_API_KEY)
-- Hybrid Analysis: `GET https://www.hybrid-analysis.com/api/v2/search/hash` (HA_API_KEY)
-- Malshare: `GET https://malshare.com/api.php?action=details&hash={hash}` (MALSHARE_API_KEY)
-
-## Sprint 4: Domain Reputation & Security Research
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Domain age check (WHOIS creation date) | Pending | Newly registered = suspicious |
-| URLhaus domain lookup | Pending | Known malware distribution (free, no key) |
-| PhishTank check | Pending | Known phishing (free with key) |
-| OpenPhish feed check | Pending | Phishing URLs (free) |
-| AbuseIPDB lookup | Pending | IP/domain abuse reports (free tier) |
-| URLScan.io domain analysis | Pending | Screenshots, DOM, tech, category |
-| VirusTotal domain reputation | Pending | 70+ engine reputation (free tier) |
-| ThreatCrowd relationships | Pending | Domain → IP, email, subdomain graph |
-| Verdict scoring (new + reports + abuse = suspicious) | Pending | Aggregate signals |
-| MITRE ATT&CK technique lookup | Pending | "How is this attack performed?" |
-| Security research dorking | Pending | Query StackExchange, GitHub, PacketStorm for techniques |
-| GTFOBins / LOLBAS lookup | Pending | Living off the land technique reference |
-
-### CLI Interface
-```
-ghost domain example.com             # Full reputation check
-ghost domain example.com --age       # Just WHOIS age check
-ghost domain --batch domains.txt     # Bulk domain reputation
-
-ghost research "pyarmor deobfuscation forensics"  # Find techniques/papers
-ghost research --attack T1059.001    # MITRE ATT&CK technique details
-ghost research --lolbas certutil     # Windows living-off-the-land lookup
-```
-
-### Domain Verdict Logic
-```
-Score starts at 0 (neutral)
-
-+30  WHOIS created < 30 days ago (newly registered)
-+20  URLhaus has malware reports
-+20  PhishTank lists as phishing
-+15  AbuseIPDB > 10 reports in 30 days
-+10  VirusTotal > 3 engines flag it
-+5   No HTTPS / invalid cert
-+5   Domain name looks generated (high entropy)
-
-0-10:   CLEAN
-11-30:  LOW RISK
-31-50:  SUSPICIOUS
-51+:    HIGH RISK / LIKELY MALICIOUS
-```
-
-### Free API Endpoints
-- WHOIS: python-whois library (no key)
-- URLhaus: `https://urlhaus-api.abuse.ch/v1/host/{domain}` (no key)
-- OpenPhish: `https://openphish.com/feed.txt` (no key)
-- ThreatCrowd: `https://www.threatcrowd.org/searchApi/v2/domain/report/?domain={domain}` (no key)
-- AbuseIPDB: `https://api.abuseipdb.com/api/v2/check` (free key required)
-- URLScan: `https://urlscan.io/api/v1/search/?q=domain:{domain}` (free key)
-- PhishTank: `https://checkurl.phishtank.com/` (free key)
-- VirusTotal: `https://www.virustotal.com/api/v3/domains/{domain}` (free key)
-- MITRE ATT&CK: `https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json`
-- GTFOBins: `https://gtfobins.github.io/` (scrape or GitHub API)
-- LOLBAS: `https://lolbas-project.github.io/api/lolbas.json`
-
-## Sprint 2c: Certificate Verification (TLS Inspection)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Connect and pull TLS cert from host:port | Pending | Pure Python ssl module, no openssl needed |
-| Parse certificate fields (subject, issuer, SANs, dates) | Pending | x509 parsing via ssl/cryptography lib |
-| Expiry check (days until expiration) | Pending | Alert if < 30 days |
-| Chain validation (intermediate + root) | Pending | Verify full chain of trust |
-| SAN extraction (all hostnames covered) | Pending | Subject Alternative Names |
-| Issuer identification (Let's Encrypt, DigiCert, etc) | Pending | Who issued it |
-| Certificate pinning detection | Pending | HPKP / expect-CT headers |
-| Self-signed detection | Pending | Flag untrusted certs |
-| Certificate transparency lookup (crt.sh cross-ref) | Pending | Was this cert logged publicly |
-| Wildcard detection | Pending | *.example.com coverage |
-| Protocol/cipher enumeration | Pending | TLS 1.2/1.3, cipher suites |
-| OCSP stapling check | Pending | Revocation status |
-
-### CLI Interface
-```
-ghost cert example.com                  # Full cert inspection (port 443 default)
-ghost cert example.com:8443             # Custom port
-ghost cert example.com --chain          # Show full certificate chain
-ghost cert example.com --expiry         # Just days until expiration
-ghost cert example.com --sans           # Just SANs (all covered hostnames)
-ghost cert example.com --json           # Machine-readable output
-```
-
-### Example Output
-```
-ghost cert example.com
-
-TLS Certificate: example.com:443
-═══════════════════════════════════════════════════════
-Subject:      CN=example.com
-Issuer:       CN=R3, O=Let's Encrypt, C=US
-Valid from:   2024-01-15 00:00:00 UTC
-Valid until:  2024-04-14 23:59:59 UTC
-Expires in:   47 days ✅
-
-SANs (Subject Alternative Names):
-  • example.com
-  • www.example.com
-  • api.example.com
-  • *.dev.example.com (wildcard)
-
-Chain:
-  [0] CN=example.com (leaf)
-  [1] CN=R3, O=Let's Encrypt (intermediate)
-  [2] CN=ISRG Root X1 (root, trusted)
-
-Protocol:     TLS 1.3
-Cipher:       TLS_AES_256_GCM_SHA384
-Key:          EC 256-bit (P-256)
-Serial:       0A:1B:2C:3D:4E:5F...
-Fingerprint:  SHA256:ab:cd:ef:12:34...
-
-OCSP:         Stapled ✅ (status: good)
-CT Logged:    Yes (3 logs)
-Self-signed:  No
-Wildcard:     Yes (*.dev.example.com)
-
-Provenance:
-  Source:     Direct TLS connection
-  Checked:    2024-02-27T15:30:00Z (live query)
-```
-
-### Implementation
-```python
-# Pure Python — no openssl binary needed
-import ssl
-import socket
-from cryptography import x509  # for detailed parsing
-from cryptography.hazmat.backends import default_backend
-
-# Connect and grab cert
-context = ssl.create_default_context()
-with socket.create_connection((host, port)) as sock:
-    with context.wrap_socket(sock, server_hostname=host) as tls:
-        cert_der = tls.getpeercert(binary_form=True)
-        cert_pem = ssl.DER_cert_to_PEM_cert(cert_der)
-        cert_info = tls.getpeercert()  # parsed dict
-        cipher = tls.cipher()
-        version = tls.version()
-```
-
-### Dependencies
-- `ssl` (stdlib — always available)
-- `socket` (stdlib)
-- `cryptography` (optional, for detailed x509 parsing + chain validation)
-- No external services needed — direct connection to target
-
-## Sprint 4b: Email Verification (SMTP Probing)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| MX record lookup for domain | Pending | dnspython → find mail servers |
-| SMTP connect + banner grab | Pending | asyncio SMTP, identify server software |
-| VRFY command probe | Pending | Direct user verification (often disabled) |
-| RCPT TO probe | Pending | Send MAIL FROM + RCPT TO, check 250 vs 550 |
-| Catch-all detection | Pending | Test with random address — if accepts all, can't verify |
-| Rate limiting / politeness | Pending | Don't hammer mail servers, 1 probe per 5s |
-| Multiple address batch check | Pending | Verify list of addresses against same domain |
-| SPF/DKIM/DMARC record check | Pending | DNS-based email auth posture |
-| Disposable email detection | Pending | Check against known disposable domains list |
-
-### CLI Interface
-```
-ghost email verify user@example.com          # Single address verification
-ghost email verify --batch emails.txt        # Bulk verification
-ghost email mx example.com                   # MX records + mail server info
-ghost email auth example.com                 # SPF + DKIM + DMARC check
-ghost email disposable user@tempmail.xyz     # Is this a throwaway?
-```
-
-### Example Output
-```
-ghost email verify admin@example.com
-
-Email Verification: admin@example.com
-══════════════════════════════════════════════
-Domain:       example.com
-MX Records:   mx1.example.com (pri 10), mx2.example.com (pri 20)
-Mail Server:  mx1.example.com:25
-Banner:       220 mx1.example.com ESMTP Postfix
-
-Verification:
-  VRFY:       disabled (252 response)
-  RCPT TO:    250 OK ✅ — address EXISTS
-  Catch-all:  No (random address rejected with 550)
-
-Verdict:      VALID — address exists on this mail server
-
-Email Auth Posture:
-  SPF:        v=spf1 include:_spf.google.com -all ✅
-  DKIM:       selector1._domainkey.example.com → found ✅
-  DMARC:      v=DMARC1; p=reject; rua=mailto:dmarc@example.com ✅
-
-Provenance:
-  Source:     Direct SMTP connection to mx1.example.com:25
-  Checked:    2024-02-27T15:45:00Z (live probe)
-  Method:     RCPT TO verification (VRFY disabled on server)
-```
-
-### SMTP Probe Flow
-```python
-# Pseudocode — async SMTP probing
-async def verify_email(address: str) -> EmailVerifyResult:
-    user, domain = address.split('@')
-    
-    # Step 1: Find MX
-    mx_records = await dns_lookup(domain, 'MX')
-    mx_host = mx_records[0].exchange
-    
-    # Step 2: Connect
-    reader, writer = await asyncio.open_connection(mx_host, 25)
-    banner = await reader.readline()  # 220 greeting
-    
-    # Step 3: HELO
-    writer.write(b'HELO ghost.local\r\n')
-    await reader.readline()  # 250
-    
-    # Step 4: Try VRFY first
-    writer.write(f'VRFY {address}\r\n'.encode())
-    vrfy_resp = await reader.readline()
-    # 250 = exists, 252 = can't verify, 550 = doesn't exist
-    
-    # Step 5: RCPT TO probe (more reliable)
-    writer.write(b'MAIL FROM:<probe@ghost.local>\r\n')
-    await reader.readline()  # 250
-    writer.write(f'RCPT TO:<{address}>\r\n'.encode())
-    rcpt_resp = await reader.readline()
-    # 250 = exists, 550 = doesn't exist, 452 = try later
-    
-    # Step 6: Catch-all detection
-    writer.write(f'RCPT TO:<{random_string}@{domain}>\r\n'.encode())
-    catchall_resp = await reader.readline()
-    # If 250 → catch-all (can't trust RCPT TO results)
-    
-    # Step 7: QUIT
-    writer.write(b'QUIT\r\n')
-    writer.close()
-```
-
-### Ethics / Legality Notes
-- SMTP probing is a GRAY AREA — some servers consider it abuse
-- Always: use realistic HELO, don't probe same server > 5 times/hour
-- Never: actually SEND email, forge headers, or relay through the server
-- Respect 421/452 responses (server asking you to slow down)
-- Ghost/midnight modes: probe through Tor to avoid IP reputation damage
-- Paranoia level affects probe aggressiveness:
-  - casual: direct connection, real-ish HELO
-  - cautious: rotating source IP, realistic HELO
-  - ghost: Tor, minimal probes, longer delays
-  - midnight: single probe then disconnect, maximum stealth
-
-## Sprint 6: Wireless / Bluetooth Intelligence (WiGLE)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| WiGLE API integration | Pending | Free account, API key required |
-| BSSID search (WiFi AP lookup) | Pending | Location + SSID + encryption + sightings |
-| SSID search (find all APs with name) | Pending | Rogue AP detection, corporate tracking |
-| Bluetooth device search | Pending | BLE device location history |
-| GPS bounding box search | Pending | "What networks exist in this area?" |
-| OUI/MAC manufacturer lookup | Pending | Free, IEEE database (no API needed) |
-| Sighting timeline (device movement) | Pending | Where has this device been seen over time? |
-| Nearby network correlation | Pending | What else was seen at same time/place? |
-| Mylnikov BSSID geolocation | Pending | Free, no key backup for location |
-
-### CLI Interface
-```
-ghost wireless --bssid AA:BB:CC:DD:EE:FF     # WiFi AP lookup + location history
-ghost wireless --ssid "CorpNet"              # Find all APs broadcasting this name
-ghost wireless --bluetooth AA:BB:CC:DD:EE:FF # Bluetooth device tracking
-ghost wireless --area 30.27,-97.74 --radius 1km  # What's in this area?
-ghost wireless --oui AA:BB:CC               # Manufacturer lookup (free, local)
-```
-
-### API Endpoints
-- WiGLE: `https://api.wigle.net/api/v2/network/search` (free key: WIGLE_API_KEY)
-- WiGLE Bluetooth: `https://api.wigle.net/api/v2/bluetooth/search`
-- Mylnikov (backup): `https://api.mylnikov.org/geolocation/wifi?bssid={bssid}` (no key)
-- IEEE OUI: local database lookup (download once, query offline)
-
-### Use Cases
-- Track device movement over time (BSSID seen in multiple cities)
-- Detect rogue APs (corporate SSID appearing in unexpected locations)
-- Correlate wireless presence with physical location
-- Identify device manufacturer from MAC prefix
-- Map wireless infrastructure for a physical location
-
-## Sprint 6b: Cellular Intelligence (IMSI/IMEI/Tower)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| MCC/MNC decode (IMSI → country + carrier) | Pending | Free: mccmnc Python package, offline DB |
-| OpenCelliD tower geolocation | Pending | Free with key: tower ID → GPS coordinates |
-| IMEI → device model (TAC lookup) | Pending | Free: offline TAC database |
-| IMEI Luhn validation | Pending | Local computation, no API |
-| Cell tower area search | Pending | "What towers are near this location?" |
-| OUI/manufacturer from IMEI TAC | Pending | GSMA TAC prefix → brand/model |
-| HLR lookup (is number active?) | Pending | PAID: hlrlookup.com, Telnyx, various |
-| Number portability check | Pending | PAID: carrier APIs |
-| Google Geolocation API (tower → coords) | Pending | Free tier available |
-
-### CLI Interface
-```
-ghost cellular --imsi 310260123456789       # Decode IMSI → country + carrier
-ghost cellular --imei 353456789012345       # IMEI → device model + validation
-ghost cellular --tower 310 260 1234 5678    # Cell tower → GPS location
-ghost cellular --area 30.27,-97.74 --radius 5km  # Towers in area
-ghost cellular --mcc-mnc 310 260            # Just carrier lookup
-ghost cellular --validate-imei 353456789012345  # Luhn check only
-```
-
-### Example Output
-```
-ghost cellular --imsi 310260123456789
-
-IMSI Analysis: 310260123456789
-══════════════════════════════════════════
-MCC:          310 → United States
-MNC:          260 → T-Mobile USA
-MSIN:         123456789 (subscriber ID)
-Network:      T-Mobile US (GSM/LTE/5G)
-Network type: Commercial mobile
-
-Carrier info:
-  Brand:      T-Mobile
-  Country:    United States
-  Technology: GSM 850/1900, LTE, 5G NR
-  Status:     Active network
-
-Note: Live status (active/roaming/ported) requires HLR lookup (paid API)
-
-Provenance:
-  Source:     mccmnc database (ITU/GSMA derived)
-  Updated:    2024-02 (database version)
-  Method:     Offline MCC/MNC prefix matching
-```
-
-### Free Resources
-- **mccmnc** Python package: `pip install mccmnc` — offline MCC/MNC database
-  ```python
-  from mccmnc import find_matches
-  results = find_matches(mcc="310", mnc="260")
-  # → [{'mcc': '310', 'mnc': '260', 'operator': 'T-Mobile USA', 'country': 'US'}]
-  ```
-- **OpenCelliD**: `https://opencellid.org/` — free account + API token
-  - Endpoint: `https://us1.unwiredlabs.com/v2/process.php` (UnwiredLabs hosts it)
-  - Free tier: limited lookups/day
-  - Data: cell_id + lac + mcc + mnc → latitude, longitude, accuracy
-- **TAC database**: downloadable from GSMA or community mirrors
-  - First 8 digits of IMEI → device manufacturer + model
-  - Python: split IMEI, validate Luhn, lookup TAC in local SQLite
-- **Google Geolocation API**: `https://www.googleapis.com/geolocation/v1/geolocate`
-  - Free tier available (requires API key)
-  - Input: cell tower IDs → output: GPS coordinates
-- **mcc-mnc-list** (GitHub): community-maintained CSV of all MCC/MNC pairs
-  - `https://github.com/musalbas/mcc-mnc-table`
-
-### Paid APIs (Optional)
-- **HLR Lookup** (is number active/roaming/ported):
-  - hlrlookup.com — per-query pricing
-  - Telnyx — carrier-grade, enterprise pricing
-  - Vonage (Nexmo) Number Insight — tiered free/paid
-  - Twilio Lookup — $0.005/lookup for carrier info
-  - Key env var: HLR_API_KEY + HLR_PROVIDER
-- **Number Portability**:
-  - Carrier-specific APIs
-  - Some HLR providers include porting status
-
-### Legal / Ethical Notes
-- MCC/MNC decoding: completely legal (public ITU data)
-- IMEI lookup: legal (public TAC database)
-- OpenCelliD: legal (community-contributed data)
-- HLR lookup: LEGAL but requires legitimate purpose (fraud prevention, KYC)
-- SS7/Diameter interception: ILLEGAL without carrier authorization
-- IMSI catching (Stingray): ILLEGAL without law enforcement authority
-- GhostMCP will NEVER implement active cellular interception
-
-## Sprint 5c: People Intelligence (Phone/Name/Address)
-
-| Task | Status | Notes |
-|------|--------|-------|
-| Reverse phone lookup | Pending | Number → name, carrier, location, spam reports |
-| Name search | Pending | Name → associated addresses, phones, emails, social |
-| Address search | Pending | Address → current/past residents, property records |
-| Phone number validation | Pending | Is it valid? Mobile/landline? Active? |
-| Carrier identification | Pending | Phone number → carrier (free via libphonenumber) |
-| Country/region from number | Pending | E.164 parsing → country + region |
-| Caller ID / spam scoring | Pending | Community reports of spam/scam |
-| Social media from phone/email | Pending | Reverse lookup → linked accounts |
-| Public records aggregation | Pending | Court records, business filings, property |
-
-### CLI Interface
-```
-ghost person --phone +15125551234           # Reverse phone lookup
-ghost person --phone +15125551234 --carrier # Just carrier info
-ghost person --name "John Smith" --state TX # Name search with location
-ghost person --address "123 Main St, Austin TX"  # Address lookup
-ghost person --email user@example.com       # Email → associated info
-```
-
-### Free Resources
-
-| Source | What It Provides | Free? | Access |
-|--------|-----------------|-------|--------|
-| **libphonenumber** (Google) | Number validation, carrier, country, type (mobile/fixed) | ✅ local | `pip install phonenumbers` |
-| **NumVerify** | Phone validation + carrier + location | ✅ (100/mo free) | REST API |
-| **Truecaller** | Caller ID / spam database | ⚠️ Limited scrape | No official free API |
-| **OpenCNAM** | Caller Name (CNAM) lookup | ⚠️ Paid | REST API |
-| **USPhonebook** | Reverse phone (US) | ✅ scrape | Web |
-| **Whitepages** | Name/phone/address (US) | ⚠️ Limited | Web/API paid |
-| **192.com** | UK directory | ⚠️ Limited | Web |
-| **Pipl** (now Lusha) | People search aggregator | ⚠️ Paid | API |
-| **That's Them** | Free people search (US) | ✅ | Web |
-| **SpyDialer** | Reverse phone (US) | ✅ | Web |
-| **Sync.me** | Global caller ID | ⚠️ Limited | App/web |
-| **OSINT Industries** | Email/phone → full profile | ⚠️ Paid | API |
-
-### Globally Available (No US Bias)
-
-| Region | Sources |
-|--------|---------|
-| US/Canada | USPhonebook, That's Them, SpyDialer, Whitepages |
-| UK | 192.com, BT Phone Book |
-| EU | Local directories + GDPR constraints |
-| Australia | White Pages AU |
-| Global | libphonenumber (validation), NumVerify, Truecaller |
-
-### Example Output
-```
-ghost person --phone +15125551234
-
-Phone Lookup: +1 (512) 555-1234
-═══════════════════════════════════════════════
-Country:      United States (+1)
-Region:       Texas (512 area code)
-Type:         Mobile
-Carrier:      T-Mobile
-Valid:        ✅ (E.164 format valid)
-
-Caller ID:    John M. Smith (confidence: medium)
-Spam reports: 0 (clean)
-
-Associated:
-  Address:    123 Main St, Austin, TX 78701 (2019-present)
-  Email:      jsmith@gmail.com (linked via social)
-  Social:     LinkedIn (John Smith, Austin TX)
-  
-Provenance:
-  Source:     libphonenumber (carrier/type) + USPhonebook (name/address)
-  Checked:    2024-02-27T16:00:00Z
-  Confidence: Medium (multiple sources partially confirm)
-
-Note: Results vary by country. GDPR regions have limited data.
-```
-
-### Implementation Notes
-- **libphonenumber** is the core — validates, identifies carrier, parses E.164
-  ```python
-  import phonenumbers
-  number = phonenumbers.parse("+15125551234")
-  carrier = phonenumbers.carrier.name_for_number(number, "en")  # "T-Mobile"
-  region = phonenumbers.geocoder.description_for_number(number, "en")  # "Texas"
-  ```
-- Free people search sites require scraping (fragile, may break)
-- GDPR makes EU lookups very limited — document this clearly
-- Always note confidence level (single source = low, multiple = medium/high)
-- Never present unverified data as fact — always "associated" not "belongs to"
-
-### Legal / Ethical Notes
-- Phone number → carrier: LEGAL (public allocation data)
-- Reverse lookup via public directories: LEGAL (published information)
-- Scraping paid services without auth: ILLEGAL / ToS violation
-- Storing/redistributing personal data: subject to local privacy laws
-- GDPR (EU): strict consent requirements for personal data processing
-- GhostMCP provides OSINT from PUBLIC sources only — never private databases
-- All results marked with source + confidence to prevent misattribution
 ## Known Issues
 
-- DDG HTML endpoint now returns 202 + JS-required page (mid-2026 change)
-- Needs: either use DDG lite (https://lite.duckduckgo.com/lite/?q=) or DDG API
-- Google scraper needs curl_cffi for reliable results (httpx gets blocked)
-- Serper.dev works perfectly when SERPER_API_KEY is set
-
+| Issue | Severity | Workaround |
+|-------|----------|------------|
+| DDG rate limits after burst requests | Low | min_delay=2.0 prevents in normal use; 202 retry handles transient |
+| Google CAPTCHA on heavy scraping | Medium | Use Serper API (SERPER_API_KEY) or install curl_cffi |
+| Hash lookup not yet exposed as MCP tool | Low | Available as Python API; MCP tool planned |
