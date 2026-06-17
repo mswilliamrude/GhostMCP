@@ -1,7 +1,8 @@
-"""DuckDuckGo HTML search engine scraper."""
+"""DuckDuckGo Lite search engine scraper."""
 
 from __future__ import annotations
 
+import asyncio
 import re
 from html import unescape
 from urllib.parse import unquote, urlparse, parse_qs
@@ -12,18 +13,26 @@ from .base import SearchEngine, SearchResult, SearchEngineError
 
 
 class DuckDuckGoEngine(SearchEngine):
-    """DuckDuckGo HTML scraper — no API key required.
+    """DuckDuckGo Lite scraper — no API key required.
 
-    Fetches results from the lite HTML endpoint and parses them.
+    Uses the lightweight lite.duckduckgo.com endpoint (table-based HTML).
+    More reliable than html.duckduckgo.com which returns 202/blocks.
     Supports proxy passthrough for ghost/midnight paranoia modes.
     """
 
     name = "duckduckgo"
     min_delay = 2.0  # DDG is aggressive about rate limiting
-    BASE_URL = "https://html.duckduckgo.com/html/"
+    BASE_URL = "https://lite.duckduckgo.com/lite/"
+    USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 
     async def search(self, query: str, num_results: int = 10) -> list[SearchResult]:
-        """Search DuckDuckGo via HTML scraping.
+        """Search DuckDuckGo via Lite HTML endpoint.
+
+        Handles DDG's 202 throttle responses with exponential backoff retry.
 
         Args:
             query: Search query string.
@@ -38,18 +47,35 @@ class DuckDuckGoEngine(SearchEngine):
         if self.proxy:
             transport = httpx.AsyncHTTPTransport(proxy=self.proxy.get("all"))
 
+        max_retries = 3
+        backoff = 5.0  # DDG throttles aggressively; 5s base backoff
+
         try:
             async with httpx.AsyncClient(
                 transport=transport,
                 timeout=30.0,
                 follow_redirects=True,
             ) as client:
-                resp = await client.post(
-                    self.BASE_URL,
-                    data={"q": query, "b": ""},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-                resp.raise_for_status()
+                for attempt in range(max_retries):
+                    resp = await client.post(
+                        self.BASE_URL,
+                        data={"q": query, "kl": ""},
+                        headers={
+                            "User-Agent": self.USER_AGENT,
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                    )
+
+                    if resp.status_code == 202:
+                        # DDG throttle — wait and retry
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(backoff * (attempt + 1))
+                            continue
+                        # Final attempt still 202 — return empty
+                        return []
+
+                    resp.raise_for_status()
+                    break
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 from .base import RateLimitError
@@ -58,15 +84,23 @@ class DuckDuckGoEngine(SearchEngine):
         except httpx.RequestError as e:
             raise SearchEngineError(self.name, f"Request failed: {e}")
 
-        return self._parse_html(resp.text, num_results)
+        return self._parse_lite_html(resp.text, num_results)
 
-    def _parse_html(self, html: str, num_results: int) -> list[SearchResult]:
-        """Parse DuckDuckGo HTML results page.
+    def _parse_lite_html(self, html: str, num_results: int) -> list[SearchResult]:
+        """Parse DuckDuckGo Lite results page.
 
-        Uses regex parsing — no heavy dependencies needed.
+        DDG Lite format (table-based):
+          <tr>
+            <td>1.&nbsp;</td>
+            <td><a rel="nofollow" href="URL" class='result-link'>Title</a></td>
+          </tr>
+          <tr>
+            <td>&nbsp;</td>
+            <td class='result-snippet'>Snippet text...</td>
+          </tr>
 
         Args:
-            html: Raw HTML response from DDG.
+            html: Raw HTML response from DDG Lite.
             num_results: Maximum results to return.
 
         Returns:
@@ -74,53 +108,29 @@ class DuckDuckGoEngine(SearchEngine):
         """
         results: list[SearchResult] = []
 
-        # DDG HTML result blocks are in <div class="result ...">
-        # Each contains: <a class="result__a"> (title+url), <a class="result__snippet"> (snippet)
-        result_blocks = re.findall(
-            r'<div[^>]*class="[^"]*result[^"]*results_links[^"]*"[^>]*>(.*?)</div>\s*</div>',
-            html,
-            re.DOTALL,
-        )
-
-        # Fallback: try individual component extraction if block parsing fails
-        if not result_blocks:
-            return self._parse_flat(html, num_results)
-
-        for block in result_blocks[:num_results]:
-            title, url, snippet = self._extract_from_block(block)
-            if title and url:
-                results.append(SearchResult(
-                    title=title,
-                    url=url,
-                    snippet=snippet or "",
-                    source_engine=self.name,
-                ))
-
-        return results
-
-    def _parse_flat(self, html: str, num_results: int) -> list[SearchResult]:
-        """Fallback flat regex parsing when block parsing fails."""
-        results: list[SearchResult] = []
-
-        # Extract links with class result__a
+        # Extract all result links: <a rel="nofollow" href="URL" class='result-link'>Title</a>
         links = re.findall(
-            r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-            html,
-            re.DOTALL,
-        )
-        # Extract snippets
-        snippets = re.findall(
-            r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
+            r"""<a\s+rel=["']nofollow["']\s+href=["'](https?://[^"']+)["']\s+class=["']result-link["'][^>]*>(.*?)</a>""",
             html,
             re.DOTALL,
         )
 
-        for i, (raw_url, raw_title) in enumerate(links[:num_results]):
-            url = self._clean_url(raw_url)
+        # Extract all snippets: <td class='result-snippet'>...</td>
+        snippets = re.findall(
+            r"""class=["']result-snippet["'][^>]*>(.*?)</td>""",
+            html,
+            re.DOTALL,
+        )
+
+        for i, (url, raw_title) in enumerate(links[:num_results]):
             title = self._strip_tags(unescape(raw_title))
             snippet = ""
             if i < len(snippets):
                 snippet = self._strip_tags(unescape(snippets[i]))
+
+            # Skip DDG internal links
+            if "duckduckgo.com" in url:
+                continue
 
             if title and url:
                 results.append(SearchResult(
@@ -131,47 +141,6 @@ class DuckDuckGoEngine(SearchEngine):
                 ))
 
         return results
-
-    def _extract_from_block(self, block: str) -> tuple[str, str, str]:
-        """Extract title, url, snippet from a single result block."""
-        title = ""
-        url = ""
-        snippet = ""
-
-        # Title + URL from result__a link
-        link_match = re.search(
-            r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-            block,
-            re.DOTALL,
-        )
-        if link_match:
-            url = self._clean_url(link_match.group(1))
-            title = self._strip_tags(unescape(link_match.group(2)))
-
-        # Snippet from result__snippet
-        snippet_match = re.search(
-            r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
-            block,
-            re.DOTALL,
-        )
-        if snippet_match:
-            snippet = self._strip_tags(unescape(snippet_match.group(1)))
-
-        return title, url, snippet
-
-    @staticmethod
-    def _clean_url(raw_url: str) -> str:
-        """Extract actual URL from DDG redirect wrapper."""
-        # DDG wraps URLs: //duckduckgo.com/l/?uddg=<encoded_url>&...
-        if "uddg=" in raw_url:
-            parsed = urlparse(raw_url)
-            params = parse_qs(parsed.query)
-            if "uddg" in params:
-                return unquote(params["uddg"][0])
-        # Direct URL
-        if raw_url.startswith("//"):
-            return "https:" + raw_url
-        return raw_url
 
     @staticmethod
     def _strip_tags(text: str) -> str:

@@ -12,52 +12,51 @@ from src.engines.base import SearchResult, SearchEngineError
 from src.engines.duckduckgo import DuckDuckGoEngine
 
 
-# Sample DDG HTML response for testing parsing logic
+# Sample DDG Lite HTML response for testing parsing logic
+# DDG Lite uses table-based layout with result-link and result-snippet classes
 SAMPLE_DDG_HTML = """
 <html>
 <body>
-<div class="serp__results">
-
-<div class="result results_links results_links_deep web-result">
-  <div class="links_main links_deep result__body">
-    <h2 class="result__title">
-      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage1&rut=abc123">
-        Example Page One — Great Resource
-      </a>
-    </h2>
-    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage1">
+<table>
+  <tr>
+    <td valign="top">1.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="https://example.com/page1" class='result-link'>Example Page One &#x2014; Great Resource</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>
       This is the first result snippet with <b>search terms</b> highlighted.
-    </a>
-  </div>
-</div>
+    </td>
+  </tr>
 
-<div class="result results_links results_links_deep web-result">
-  <div class="links_main links_deep result__body">
-    <h2 class="result__title">
-      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fresearch&rut=def456">
-        Research Paper on OSINT Techniques
-      </a>
-    </h2>
-    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fresearch">
+  <tr>
+    <td valign="top">2.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="https://example.org/research" class='result-link'>Research Paper on OSINT Techniques</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>
       A comprehensive overview of open source intelligence methods and tools.
-    </a>
-  </div>
-</div>
+    </td>
+  </tr>
 
-<div class="result results_links results_links_deep web-result">
-  <div class="links_main links_deep result__body">
-    <h2 class="result__title">
-      <a rel="nofollow" class="result__a" href="https://direct-link.net/article">
-        Direct Link Article &amp; Title
-      </a>
-    </h2>
-    <a class="result__snippet" href="https://direct-link.net/article">
+  <tr>
+    <td valign="top">3.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="https://direct-link.net/article" class='result-link'>Direct Link Article &amp; Title</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>
       This result has a direct URL without DDG redirect wrapper.
-    </a>
-  </div>
-</div>
-
-</div>
+    </td>
+  </tr>
+</table>
 </body>
 </html>
 """
@@ -65,9 +64,11 @@ SAMPLE_DDG_HTML = """
 EMPTY_DDG_HTML = """
 <html>
 <body>
-<div class="serp__results">
-  <div class="no-results">No results found for "xyzzy_nothing_here_12345"</div>
-</div>
+<table>
+  <tr>
+    <td>No results found for "xyzzy_nothing_here_12345"</td>
+  </tr>
+</table>
 </body>
 </html>
 """
@@ -109,70 +110,84 @@ class TestSearchResult:
 
 
 class TestDuckDuckGoParser:
-    """Tests for DDG HTML parsing — no network calls."""
+    """Tests for DDG Lite HTML parsing — no network calls."""
 
     def setup_method(self):
         self.engine = DuckDuckGoEngine()
 
     def test_parse_results_count(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         assert len(results) == 3
 
     def test_parse_title_extraction(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         assert "Example Page One" in results[0].title
         assert "Research Paper" in results[1].title
 
-    def test_parse_url_unwrapping(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
-        # DDG redirect URL should be unwrapped
+    def test_parse_url_direct(self):
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
+        # DDG Lite provides direct URLs (no redirect wrapper)
         assert results[0].url == "https://example.com/page1"
         assert results[1].url == "https://example.org/research"
 
     def test_parse_direct_url(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         assert results[2].url == "https://direct-link.net/article"
 
     def test_parse_snippet_strips_html(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         # Bold tags should be stripped
         assert "<b>" not in results[0].snippet
         assert "search terms" in results[0].snippet
 
     def test_parse_html_entities(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         # &amp; should be decoded
         assert "&" in results[2].title
         assert "&amp;" not in results[2].title
 
     def test_parse_empty_results(self):
-        results = self.engine._parse_html(EMPTY_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(EMPTY_DDG_HTML, num_results=10)
         assert results == []
 
     def test_parse_respects_num_results(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=1)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=1)
         assert len(results) <= 1
 
     def test_source_engine_set(self):
-        results = self.engine._parse_html(SAMPLE_DDG_HTML, num_results=10)
+        results = self.engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
         for r in results:
             assert r.source_engine == "duckduckgo"
 
 
 class TestDuckDuckGoURL:
-    """Tests for URL cleaning logic."""
+    """Tests for URL handling — DDG Lite gives direct URLs."""
 
-    def test_uddg_unwrap(self):
-        raw = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpath&rut=abc"
-        assert DuckDuckGoEngine._clean_url(raw) == "https://example.com/path"
+    def test_direct_urls_in_results(self):
+        """DDG Lite provides direct URLs, no unwrapping needed."""
+        engine = DuckDuckGoEngine()
+        results = engine._parse_lite_html(SAMPLE_DDG_HTML, num_results=10)
+        # All URLs should be direct https:// links
+        for r in results:
+            assert r.url.startswith("https://")
+            assert "duckduckgo.com" not in r.url
 
-    def test_protocol_relative(self):
-        raw = "//example.com/page"
-        assert DuckDuckGoEngine._clean_url(raw) == "https://example.com/page"
-
-    def test_direct_url_passthrough(self):
-        raw = "https://already-clean.com/page"
-        assert DuckDuckGoEngine._clean_url(raw) == "https://already-clean.com/page"
+    def test_ddg_internal_links_filtered(self):
+        """Links to duckduckgo.com itself should be filtered out."""
+        html = """
+        <tr>
+          <td><a rel="nofollow" href="https://duckduckgo.com/about" class='result-link'>About DDG</a></td>
+        </tr>
+        <tr><td class='result-snippet'>Internal link.</td></tr>
+        <tr>
+          <td><a rel="nofollow" href="https://real-site.com/page" class='result-link'>Real Result</a></td>
+        </tr>
+        <tr><td class='result-snippet'>External link.</td></tr>
+        """
+        engine = DuckDuckGoEngine()
+        results = engine._parse_lite_html(html, num_results=10)
+        assert len(results) == 1
+        assert results[0].url == "https://real-site.com/page"
 
 
 class TestDuckDuckGoSearch:
@@ -200,6 +215,11 @@ class TestDuckDuckGoSearch:
 
         assert len(results) == 3
         assert results[0].url == "https://example.com/page1"
+
+    @pytest.mark.asyncio
+    async def test_search_uses_lite_endpoint(self, engine):
+        """Engine posts to lite.duckduckgo.com, not html endpoint."""
+        assert "lite.duckduckgo.com" in engine.BASE_URL
 
     @pytest.mark.asyncio
     async def test_search_with_proxy(self):
