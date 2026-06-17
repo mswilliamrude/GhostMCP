@@ -110,125 +110,174 @@ def _detect_key_type_from_der(der_cert: bytes) -> str:
 
 
 def _connect_and_inspect(host: str, port: int) -> CertReport:
-    """Synchronous TLS connection + cert extraction. Runs via to_thread."""
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    """Synchronous TLS connection + cert extraction. Runs via to_thread.
+    
+    Strategy: Try verified connection first (gets parsed cert dict).
+    If verification fails (self-signed, expired), retry with CERT_NONE
+    and parse the DER bytes with the cryptography library.
+    """
+    der_cert = None
+    cert_dict = {}
+    cipher_info = None
+    tls_version = None
+    verification_failed = False
 
-    sock = socket.create_connection((host, port), timeout=10)
+    # Attempt 1: Verified connection (gets full parsed cert dict)
     try:
-        ssock = ctx.wrap_socket(sock, server_hostname=host)
+        ctx = ssl.create_default_context()
+        sock = socket.create_connection((host, port), timeout=10)
         try:
-            # Parsed certificate dict (only available for validated certs with CERT_NONE
-            # this may be empty — use binary form as fallback)
+            ssock = ctx.wrap_socket(sock, server_hostname=host)
             cert_dict = ssock.getpeercert(binary_form=False) or {}
             der_cert = ssock.getpeercert(binary_form=True)
-            cipher_info = ssock.cipher()        # (name, version, bits)
-            tls_version = ssock.version()       # 'TLSv1.2', 'TLSv1.3'
+            cipher_info = ssock.cipher()
+            tls_version = ssock.version()
+            ssock.close()
+        except ssl.SSLCertVerificationError:
+            verification_failed = True
+            sock.close()
+        except Exception:
+            verification_failed = True
+            sock.close()
+    except (socket.timeout, ConnectionRefusedError, OSError) as e:
+        return CertReport(
+            host=host, port=port, subject="", issuer="", not_before="",
+            not_after="", days_until_expiry=0, sans=[], serial="",
+            fingerprint_sha256="", protocol="", cipher="", key_type="",
+            is_self_signed=False, is_expired=False, chain=[],
+            error=f"{type(e).__name__}: {e}",
+        )
 
-            # ── Subject / Issuer ──
-            subject_rdns = cert_dict.get("subject", ())
-            issuer_rdns = cert_dict.get("issuer", ())
-            subject_str = _format_rdn(subject_rdns)
-            issuer_str = _format_rdn(issuer_rdns)
-            subject_cn = _extract_cn(subject_rdns)
-            issuer_cn = _extract_cn(issuer_rdns)
-
-            # ── Dates ──
-            not_before_str = cert_dict.get("notBefore", "")
-            not_after_str = cert_dict.get("notAfter", "")
-
-            days_until_expiry = 0
-            is_expired = False
-            if not_after_str:
-                try:
-                    expiry_dt = _parse_cert_date(not_after_str)
-                    now = datetime.now(timezone.utc)
-                    delta = expiry_dt - now
-                    days_until_expiry = delta.days
-                    is_expired = days_until_expiry < 0
-                except (ValueError, AttributeError):
-                    pass
-
-            # ── SANs ──
-            sans = _extract_sans(cert_dict)
-
-            # ── Serial ──
-            serial = cert_dict.get("serialNumber", "")
-
-            # ── Fingerprint ──
-            fingerprint = ""
-            if der_cert:
-                fingerprint = hashlib.sha256(der_cert).hexdigest()
-
-            # ── Protocol / Cipher ──
-            protocol = tls_version or "unknown"
-            cipher_name = cipher_info[0] if cipher_info else "unknown"
-
-            # ── Key type ──
-            key_type = "unknown"
-            if der_cert:
-                key_type = _detect_key_type_from_der(der_cert)
-
-            # ── Self-signed ──
-            is_self_signed = subject_str == issuer_str and subject_str != ""
-
-            # ── Chain ──
-            chain: list[str] = []
-            # Try get_verified_chain (Python 3.13+)
-            if hasattr(ssock, "get_verified_chain"):
-                try:
-                    verified = ssock.get_verified_chain()
-                    if verified:
-                        for cert_obj in verified:
-                            # Each is an ssl.Certificate with get_info()
-                            if hasattr(cert_obj, "get_info"):
-                                info = cert_obj.get_info()
-                                chain.append(info.get("subject", str(cert_obj)))
-                            else:
-                                chain.append(str(cert_obj))
-                except Exception:
-                    pass
-
-            # Fallback: at minimum include the leaf CN
-            if not chain:
-                if subject_cn:
-                    chain.append(subject_cn)
-                if issuer_cn and issuer_cn != subject_cn:
-                    chain.append(issuer_cn)
-
+    # Attempt 2: Unverified connection (for self-signed/expired certs)
+    if verification_failed:
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            sock = socket.create_connection((host, port), timeout=10)
+            ssock = ctx.wrap_socket(sock, server_hostname=host)
+            der_cert = ssock.getpeercert(binary_form=True)
+            cipher_info = ssock.cipher()
+            tls_version = ssock.version()
+            ssock.close()
+        except Exception as e:
             return CertReport(
-                host=host,
-                port=port,
-                subject=subject_str,
-                issuer=issuer_str,
-                not_before=not_before_str,
-                not_after=not_after_str,
-                days_until_expiry=days_until_expiry,
-                sans=sans,
-                serial=serial,
-                fingerprint_sha256=fingerprint,
-                protocol=protocol,
-                cipher=cipher_name,
-                key_type=key_type,
-                is_self_signed=is_self_signed,
-                is_expired=is_expired,
-                chain=chain,
+                host=host, port=port, subject="", issuer="", not_before="",
+                not_after="", days_until_expiry=0, sans=[], serial="",
+                fingerprint_sha256="", protocol="", cipher="", key_type="",
+                is_self_signed=False, is_expired=False, chain=[],
+                error=f"SSL Error: {e}",
             )
 
-        finally:
-            ssock.close()
-    except ssl.SSLError as e:
-        return CertReport(
-            host=host, port=port, subject="", issuer="",
-            not_before="", not_after="", days_until_expiry=0,
-            sans=[], serial="", fingerprint_sha256="",
-            protocol="", cipher="", key_type="", is_self_signed=False,
-            is_expired=False, chain=[], error=f"SSL error: {e}",
-        )
-    except Exception:
-        sock.close()
-        raise
+    # Parse cert data — from cert_dict if verified, or DER if unverified
+    subject_str = ""
+    issuer_str = ""
+    not_before_str = ""
+    not_after_str = ""
+    days_until_expiry = 0
+    is_expired = False
+    sans = []
+    serial = ""
+    is_self_signed = False
+    chain = []
+
+    if cert_dict:
+        # We got a parsed dict from verified connection
+        subject_rdns = cert_dict.get("subject", ())
+        issuer_rdns = cert_dict.get("issuer", ())
+        subject_str = _format_rdn(subject_rdns)
+        issuer_str = _format_rdn(issuer_rdns)
+        not_before_str = cert_dict.get("notBefore", "")
+        not_after_str = cert_dict.get("notAfter", "")
+        sans = _extract_sans(cert_dict)
+        serial = cert_dict.get("serialNumber", "")
+        is_self_signed = subject_str == issuer_str and subject_str != ""
+
+        if not_after_str:
+            try:
+                expiry_dt = _parse_cert_date(not_after_str)
+                delta = expiry_dt - datetime.now(timezone.utc)
+                days_until_expiry = delta.days
+                is_expired = days_until_expiry < 0
+            except (ValueError, AttributeError):
+                pass
+
+        subject_cn = _extract_cn(subject_rdns)
+        issuer_cn = _extract_cn(issuer_rdns)
+        if subject_cn:
+            chain.append(subject_cn)
+        if issuer_cn and issuer_cn != subject_cn:
+            chain.append(issuer_cn)
+
+    elif der_cert:
+        # Parse DER bytes with cryptography library
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.backends import default_backend
+
+            cert_obj = x509.load_der_x509_certificate(der_cert, default_backend())
+            subject_str = cert_obj.subject.rfc4514_string()
+            issuer_str = cert_obj.issuer.rfc4514_string()
+            not_before_str = cert_obj.not_valid_before_utc.isoformat()
+            not_after_str = cert_obj.not_valid_after_utc.isoformat()
+            serial = format(cert_obj.serial_number, 'x')
+            is_self_signed = subject_str == issuer_str
+
+            delta = cert_obj.not_valid_after_utc - datetime.now(timezone.utc)
+            days_until_expiry = delta.days
+            is_expired = days_until_expiry < 0
+
+            # SANs
+            try:
+                san_ext = cert_obj.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                sans = san_ext.value.get_values_for_type(x509.DNSName)
+            except x509.ExtensionNotFound:
+                pass
+
+            # Chain (leaf only for unverified)
+            try:
+                cn = cert_obj.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+                if cn:
+                    chain.append(cn[0].value)
+                issuer_cn_attrs = cert_obj.issuer.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+                if issuer_cn_attrs and issuer_cn_attrs[0].value != (cn[0].value if cn else ""):
+                    chain.append(issuer_cn_attrs[0].value)
+            except Exception:
+                pass
+
+        except ImportError:
+            # No cryptography library — best effort from DER
+            subject_str = "(unverified cert - install cryptography for full parsing)"
+            issuer_str = ""
+
+    # Fingerprint
+    fingerprint = hashlib.sha256(der_cert).hexdigest() if der_cert else ""
+
+    # Protocol / Cipher
+    protocol = tls_version or "unknown"
+    cipher_name = cipher_info[0] if cipher_info else "unknown"
+
+    # Key type from DER
+    key_type = _detect_key_type_from_der(der_cert) if der_cert else "unknown"
+
+    return CertReport(
+        host=host,
+        port=port,
+        subject=subject_str,
+        issuer=issuer_str,
+        not_before=not_before_str,
+        not_after=not_after_str,
+        days_until_expiry=days_until_expiry,
+        sans=sans,
+        serial=serial,
+        fingerprint_sha256=fingerprint,
+        protocol=protocol,
+        cipher=cipher_name,
+        key_type=key_type,
+        is_self_signed=is_self_signed,
+        is_expired=is_expired,
+        chain=chain,
+    )
 
 
 async def inspect_cert(host: str, port: int = 443) -> CertReport:

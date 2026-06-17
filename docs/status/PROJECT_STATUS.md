@@ -115,3 +115,15 @@
 | DDG rate limits after burst requests | Low | min_delay=2.0 prevents in normal use; 202 retry handles transient |
 | Google CAPTCHA on heavy scraping | Medium | Use Serper API (SERPER_API_KEY) or install curl_cffi |
 | Hash lookup not yet exposed as MCP tool | Low | Available as Python API; MCP tool planned |
+
+## Feature Backlog (Ideas / Future)
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Reverse Tickle Tunnel | WebSocket-based reverse proxy: dev box client connects outbound to GhostMCP container, GhostMCP sends HTTP requests back through the WS to reach localhost services on the dev box. Eliminates Docker networking issues for ghost_render hitting localhost SPAs. Same architecture as ngrok/Cloudflare Tunnel. Client script (~150 lines) runs on dev box, consents to be "tickled" on specified ports. | Medium |
+| Ghost Sprint 4: Domain reputation | URLhaus, PhishTank, AbuseIPDB, WHOIS age scoring | Low |
+| Ghost Sprint 4b: Email verification | SMTP probing, SPF/DKIM/DMARC checks | Low |
+| Ghost Sprint 5c: People intelligence | Phone/name/address OSINT (libphonenumber, public directories) | Low |
+| Ghost Sprint 6: Wireless intel | WiGLE API, BSSID/SSID lookup, Bluetooth tracking | Low |
+| Ghost Sprint 6b: Cellular intel | IMSI/IMEI decode, OpenCelliD tower geolocation | Low |
+| ACR deployment | Push to wdrcentralus.azurecr.io, ACI container group, persistent daemon mode | When stable |

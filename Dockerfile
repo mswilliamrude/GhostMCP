@@ -41,7 +41,10 @@ RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh \
         'PubkeyAuthentication yes' \
         'AuthorizedKeysFile .ssh/authorized_keys' \
         > /etc/ssh/sshd_config.d/ghostmcp.conf \
-    && mkdir -p /run/sshd
+    && mkdir -p /run/sshd \
+    && echo 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright' >> /root/.bashrc \
+    && echo 'export PYTHONPATH=/app' >> /root/.bashrc \
+    && echo 'cd /app' >> /root/.bashrc
 
 # Python deps
 COPY requirements.txt /app/requirements.txt
