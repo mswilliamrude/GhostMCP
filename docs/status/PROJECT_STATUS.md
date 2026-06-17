@@ -237,3 +237,62 @@ Verdict: MALICIOUS (high confidence)
 - VirusTotal: `GET https://www.virustotal.com/api/v3/files/{hash}` (VT_API_KEY)
 - Hybrid Analysis: `GET https://www.hybrid-analysis.com/api/v2/search/hash` (HA_API_KEY)
 - Malshare: `GET https://malshare.com/api.php?action=details&hash={hash}` (MALSHARE_API_KEY)
+
+## Sprint 4: Domain Reputation & Security Research
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Domain age check (WHOIS creation date) | Pending | Newly registered = suspicious |
+| URLhaus domain lookup | Pending | Known malware distribution (free, no key) |
+| PhishTank check | Pending | Known phishing (free with key) |
+| OpenPhish feed check | Pending | Phishing URLs (free) |
+| AbuseIPDB lookup | Pending | IP/domain abuse reports (free tier) |
+| URLScan.io domain analysis | Pending | Screenshots, DOM, tech, category |
+| VirusTotal domain reputation | Pending | 70+ engine reputation (free tier) |
+| ThreatCrowd relationships | Pending | Domain → IP, email, subdomain graph |
+| Verdict scoring (new + reports + abuse = suspicious) | Pending | Aggregate signals |
+| MITRE ATT&CK technique lookup | Pending | "How is this attack performed?" |
+| Security research dorking | Pending | Query StackExchange, GitHub, PacketStorm for techniques |
+| GTFOBins / LOLBAS lookup | Pending | Living off the land technique reference |
+
+### CLI Interface
+```
+ghost domain example.com             # Full reputation check
+ghost domain example.com --age       # Just WHOIS age check
+ghost domain --batch domains.txt     # Bulk domain reputation
+
+ghost research "pyarmor deobfuscation forensics"  # Find techniques/papers
+ghost research --attack T1059.001    # MITRE ATT&CK technique details
+ghost research --lolbas certutil     # Windows living-off-the-land lookup
+```
+
+### Domain Verdict Logic
+```
+Score starts at 0 (neutral)
+
++30  WHOIS created < 30 days ago (newly registered)
++20  URLhaus has malware reports
++20  PhishTank lists as phishing
++15  AbuseIPDB > 10 reports in 30 days
++10  VirusTotal > 3 engines flag it
++5   No HTTPS / invalid cert
++5   Domain name looks generated (high entropy)
+
+0-10:   CLEAN
+11-30:  LOW RISK
+31-50:  SUSPICIOUS
+51+:    HIGH RISK / LIKELY MALICIOUS
+```
+
+### Free API Endpoints
+- WHOIS: python-whois library (no key)
+- URLhaus: `https://urlhaus-api.abuse.ch/v1/host/{domain}` (no key)
+- OpenPhish: `https://openphish.com/feed.txt` (no key)
+- ThreatCrowd: `https://www.threatcrowd.org/searchApi/v2/domain/report/?domain={domain}` (no key)
+- AbuseIPDB: `https://api.abuseipdb.com/api/v2/check` (free key required)
+- URLScan: `https://urlscan.io/api/v1/search/?q=domain:{domain}` (free key)
+- PhishTank: `https://checkurl.phishtank.com/` (free key)
+- VirusTotal: `https://www.virustotal.com/api/v3/domains/{domain}` (free key)
+- MITRE ATT&CK: `https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json`
+- GTFOBins: `https://gtfobins.github.io/` (scrape or GitHub API)
+- LOLBAS: `https://lolbas-project.github.io/api/lolbas.json`
