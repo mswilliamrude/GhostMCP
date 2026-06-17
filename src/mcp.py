@@ -25,6 +25,8 @@ from .dorking.builder import build_dork, from_template
 from .dorking.templates import get_template_names
 from .proxy.manager import ProxyManager
 from .proxy.fingerprint import get_headers
+from .recon.hashes import HashLookup, detect_hash_type, HashReport
+from .recon.subdomains import enumerate_subdomains, SubdomainReport
 from .utils.config import ParanoiaLevel
 
 
@@ -489,6 +491,155 @@ async def ghost_recon(
             )
 
     return "\n".join(output_parts)
+
+
+# ---------------------------------------------------------------------------
+# Hash intelligence tool
+# ---------------------------------------------------------------------------
+
+def _format_hash_report(report: HashReport) -> str:
+    """Format a HashReport into readable text."""
+    lines: list[str] = []
+    lines.append(f"Hash: {report.hash_value}")
+    lines.append(f"Type: {report.hash_type}")
+    lines.append(f"Verdict: {report.verdict.upper()}")
+    lines.append("")
+
+    # CIRCL
+    if report.circl is not None:
+        if report.circl.get("known"):
+            lines.append(f"[CIRCL] Known: {report.circl['filename']} (source: {report.circl['source']})")
+        else:
+            lines.append("[CIRCL] Not found in NSRL database")
+    elif "circl" in report.errors:
+        lines.append(f"[CIRCL] Error: {report.errors['circl']}")
+
+    # MalwareBazaar
+    if report.malwarebazaar is not None:
+        mb = report.malwarebazaar
+        lines.append(f"[MalwareBazaar] Family: {mb['family']}, Type: {mb['file_type']}")
+        if mb["tags"]:
+            lines.append(f"  Tags: {', '.join(mb['tags'])}")
+        if mb["first_seen"]:
+            lines.append(f"  First seen: {mb['first_seen']}")
+    elif "malwarebazaar" in report.errors:
+        lines.append(f"[MalwareBazaar] Error: {report.errors['malwarebazaar']}")
+
+    # ThreatFox
+    if report.threatfox is not None:
+        tf = report.threatfox
+        lines.append(f"[ThreatFox] Malware: {tf['malware']}")
+        if tf["c2"]:
+            lines.append(f"  C2 servers: {', '.join(tf['c2'])}")
+        if tf["campaign"]:
+            lines.append(f"  Campaign: {tf['campaign']}")
+    elif "threatfox" in report.errors:
+        lines.append(f"[ThreatFox] Error: {report.errors['threatfox']}")
+
+    # VirusTotal
+    if report.virustotal is not None:
+        vt = report.virustotal
+        lines.append(f"[VirusTotal] Detections: {vt['detections']}/{vt['total']}")
+        if vt.get("name"):
+            lines.append(f"  Name: {vt['name']}")
+    elif "virustotal" in report.errors:
+        lines.append(f"[VirusTotal] Error: {report.errors['virustotal']}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_hash",
+    description=(
+        "Look up a hash (MD5, SHA1, SHA256, SHA512) against threat intelligence "
+        "services (CIRCL, MalwareBazaar, ThreatFox, VirusTotal). Can also compute "
+        "hashes from a local file path."
+    ),
+    parameters={
+        "hash_value": {
+            "type": "string",
+            "description": "The hash to look up (hex string).",
+        },
+        "file_path": {
+            "type": "string",
+            "description": "Compute hash from file instead of direct lookup.",
+        },
+    },
+)
+async def ghost_hash(
+    hash_value: Optional[str] = None,
+    file_path: Optional[str] = None,
+) -> str:
+    """Look up a hash against threat intelligence services."""
+    if not hash_value and not file_path:
+        return "Error: Provide either hash_value or file_path."
+
+    lookup = HashLookup()
+
+    try:
+        if file_path:
+            report = await lookup.lookup_file(file_path)
+        else:
+            report = await lookup.lookup(hash_value)
+    except (ValueError, FileNotFoundError) as e:
+        return f"Error: {e}"
+
+    return _format_hash_report(report)
+
+
+# ---------------------------------------------------------------------------
+# Subdomain enumeration tool
+# ---------------------------------------------------------------------------
+
+def _format_subdomain_report(report: SubdomainReport) -> str:
+    """Format a SubdomainReport into readable text."""
+    if report.error:
+        return f"Error enumerating subdomains for {report.domain}: {report.error}"
+
+    lines: list[str] = []
+    lines.append(f"Subdomain enumeration: {report.domain}")
+    lines.append(f"Total certificates found: {report.total_certs}")
+    lines.append(f"Unique subdomains: {len(report.subdomains)}")
+    lines.append("")
+
+    if not report.subdomains:
+        lines.append("No subdomains found.")
+        return "\n".join(lines)
+
+    for sub in report.subdomains:
+        lines.append(f"  {sub}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_subdomains",
+    description=(
+        "Enumerate subdomains for a domain using Certificate Transparency logs (crt.sh). "
+        "Returns deduplicated, sorted list of subdomains found in issued certificates."
+    ),
+    parameters={
+        "domain": {
+            "type": "string",
+            "description": "Target domain to enumerate subdomains for (e.g. example.com).",
+        },
+        "include_expired": {
+            "type": "boolean",
+            "description": "Include certs past their not_after date (default false).",
+            "default": False,
+        },
+    },
+)
+async def ghost_subdomains(
+    domain: str,
+    include_expired: bool = False,
+) -> str:
+    """Enumerate subdomains via Certificate Transparency logs."""
+    if not domain:
+        return "Error: domain is required."
+
+    report = await enumerate_subdomains(domain, include_expired=include_expired)
+    return _format_subdomain_report(report)
 
 
 # ---------------------------------------------------------------------------
