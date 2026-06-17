@@ -44,14 +44,15 @@ fi
 
 # --- Configuration ---
 GHOST_IMAGE="${GHOST_IMAGE:-ghostmcp:latest}"
+GHOST_IMAGE_BASE="${GHOST_IMAGE_BASE:-ghostmcp-base:latest}"
 GHOST_CONTAINER="${GHOST_CONTAINER:-ghostmcp-dev}"
 GHOST_SSH_PORT="${GHOST_SSH_PORT:-2222}"
-GHOST_ACR="${GHOST_ACR:-wdrcentralus.azurecr.io}"
 
 # --- ACR / ACI configuration ---
 GHOST_ACR_NAME="${GHOST_ACR_NAME:-wdrcentralus}"
 GHOST_ACR_SERVER="${GHOST_ACR_NAME}.azurecr.io"
 GHOST_ACR_IMAGE="${GHOST_ACR_IMAGE:-ghostmcp}"
+GHOST_ACR_IMAGE_BASE="${GHOST_ACR_IMAGE_BASE:-ghostmcp-base}"
 GHOST_SUBSCRIPTION="${GHOST_SUBSCRIPTION:-AEPSovereign_EncryptedTransport_Sandbox}"
 GHOST_RESOURCE_GROUP="${GHOST_RESOURCE_GROUP:-aet-apt-localdev-es2}"
 GHOST_LOCATION="${GHOST_LOCATION:-centralus}"
@@ -99,14 +100,55 @@ container_exists() {
 # --- Commands ---
 
 cmd_build() {
-    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
-        echo "[INFO] Building via Azure Container Registry (az acr build)..."
-        local no_cache_flag=""
-        if [ "${2:-}" = "--no-cache" ]; then
-            no_cache_flag="--no-cache"
-        fi
+    local target="${2:-app}"
+    local no_cache_flag=""
+    if [ "${3:-}" = "--no-cache" ] || [ "${2:-}" = "--no-cache" ]; then
+        no_cache_flag="--no-cache"
+        # If --no-cache was $2, default target to app
+        if [ "${2:-}" = "--no-cache" ]; then target="app"; fi
+    fi
 
-        # MSYS2: az can't handle /c/Users/... paths — use "." from within SRC_DIR
+    case "$target" in
+        base)  _build_base "$no_cache_flag" ;;
+        app)   _build_app "$no_cache_flag" ;;
+        all)   _build_base "$no_cache_flag" && _build_app "$no_cache_flag" ;;
+        *)     echo "[ERROR] Unknown build target: $target (use: base, app, all)"; exit 1 ;;
+    esac
+}
+
+_build_base() {
+    local no_cache_flag="${1:-}"
+    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+        echo "[INFO] Building ${GHOST_ACR_IMAGE_BASE}:latest via ACR..."
+        pushd "$SRC_DIR" >/dev/null
+        az acr build \
+            --registry "$GHOST_ACR_NAME" \
+            --image "${GHOST_ACR_IMAGE_BASE}:latest" \
+            --subscription "$GHOST_SUBSCRIPTION" \
+            --platform "linux" \
+            --file "Dockerfile.base" \
+            ${no_cache_flag:+--no-cache} \
+            .
+        popd >/dev/null
+        echo "[INFO] Base image built: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE_BASE}:latest"
+    else
+        echo "[INFO] Building base image locally: $GHOST_IMAGE_BASE"
+        sudo docker build -t "$GHOST_IMAGE_BASE" \
+            -f "$SRC_DIR/Dockerfile.base" \
+            ${no_cache_flag:+--no-cache} \
+            "$SRC_DIR"
+        echo "[INFO] Base built: $(sudo docker images "${GHOST_IMAGE_BASE%:*}" --format '{{.Size}}')"
+    fi
+}
+
+_build_app() {
+    local no_cache_flag="${1:-}"
+    local git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local git_branch=$(git branch --show-current 2>/dev/null || echo "unknown")
+    local build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+        echo "[INFO] Building ${GHOST_ACR_IMAGE}:latest via ACR (using ${GHOST_ACR_IMAGE_BASE}:latest)..."
         pushd "$SRC_DIR" >/dev/null
         az acr build \
             --registry "$GHOST_ACR_NAME" \
@@ -114,21 +156,27 @@ cmd_build() {
             --subscription "$GHOST_SUBSCRIPTION" \
             --platform "linux" \
             --file "Dockerfile" \
-            --build-arg GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") \
-            --build-arg GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown") \
-            --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-            $no_cache_flag \
+            --build-arg "ACR_SERVER=${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE_BASE}" \
+            --build-arg "GIT_COMMIT=$git_commit" \
+            --build-arg "GIT_BRANCH=$git_branch" \
+            --build-arg "BUILD_TIME=$build_time" \
+            --build-arg "CACHE_BUST=$(date +%s)" \
+            ${no_cache_flag:+--no-cache} \
             .
         popd >/dev/null
-        echo "[INFO] ACR build complete: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest"
+        echo "[INFO] App image built: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest"
     else
-        echo "[INFO] Building locally: $GHOST_IMAGE from $SRC_DIR"
+        echo "[INFO] Building app image locally: $GHOST_IMAGE (using $GHOST_IMAGE_BASE)"
         sudo docker build -t "$GHOST_IMAGE" \
-            --build-arg GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") \
-            --build-arg GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown") \
-            --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            -f "$SRC_DIR/Dockerfile" \
+            --build-arg "ACR_SERVER=${GHOST_IMAGE_BASE%:*}" \
+            --build-arg "GIT_COMMIT=$git_commit" \
+            --build-arg "GIT_BRANCH=$git_branch" \
+            --build-arg "BUILD_TIME=$build_time" \
+            --build-arg "CACHE_BUST=$(date +%s)" \
+            ${no_cache_flag:+--no-cache} \
             "$SRC_DIR"
-        echo "[INFO] Build complete: $(sudo docker images "$GHOST_IMAGE" --format '{{.Size}}')"
+        echo "[INFO] App built: $(sudo docker images "${GHOST_IMAGE%:*}" --format '{{.Size}}')"
     fi
 }
 
@@ -415,30 +463,44 @@ case "${1:-help}" in
     help|*)
         echo "build-ghostmcp — Build, run, test, and manage GhostMCP container"
         echo ""
-        echo "Usage: build-ghostmcp <command>"
+        echo "Usage: build-ghostmcp <command> [target] [options]"
         echo ""
         echo "Commands:"
-        echo "  build     Build Docker image"
-        echo "  run       Start persistent container (background + SSH)"
-        echo "  stop      Stop and remove container"
-        echo "  restart   Stop + run"
-        echo "  status    Show container status"
-        echo "  logs      Show container logs (last 50 lines)"
-        echo "  ssh       SSH into running container"
-        echo "  test      Run test suite inside container"
-        echo "  mcp       Test MCP tool listing"
-        echo "  shell     Interactive bash inside container"
-        echo "  sync      Push local src/ + tests/ into container"
-        echo "  pull      Pull container src/ + tests/ to local"
-        echo "  deploy    Build + deploy to Azure Container Instances"
-        echo "  teardown  Delete ACI container group"
+        echo "  build [target]  Build Docker image (target: base, app, all. Default: app)"
+        echo "  run             Start persistent container (background + SSH)"
+        echo "  stop            Stop and remove container"
+        echo "  restart         Stop + run"
+        echo "  status          Show container status"
+        echo "  logs            Show container logs (last 50 lines)"
+        echo "  ssh             SSH into running container"
+        echo "  test            Run test suite inside container"
+        echo "  mcp             Test MCP tool listing"
+        echo "  shell           Interactive bash inside container"
+        echo "  sync            Push local src/ + tests/ into container"
+        echo "  pull            Pull container src/ + tests/ to local"
+        echo "  deploy          Deploy to Azure Container Instances"
+        echo "  teardown        Delete ACI container group"
+        echo ""
+        echo "Build targets:"
+        echo "  base            OS + Python deps + Playwright + Chromium (slow, changes rarely)"
+        echo "  app             App code only on top of base (fast, every commit)"
+        echo "  all             Build base then app"
+        echo ""
+        echo "Examples:"
+        echo "  build-ghostmcp build base          # First time: build the heavy base image"
+        echo "  build-ghostmcp build                # Subsequent: just rebuild app layer (fast)"
+        echo "  build-ghostmcp build all --no-cache # Full rebuild, no cache"
+        echo ""
+        echo "Platform: $PLATFORM (az cli: $HAS_AZ)"
         echo ""
         echo "Environment:"
         echo "  GHOST_IMAGE=$GHOST_IMAGE"
+        echo "  GHOST_IMAGE_BASE=$GHOST_IMAGE_BASE"
         echo "  GHOST_CONTAINER=$GHOST_CONTAINER"
         echo "  GHOST_SSH_PORT=$GHOST_SSH_PORT"
-        echo "  GHOST_ACR=$GHOST_ACR"
         echo "  GHOST_ACR_NAME=$GHOST_ACR_NAME"
+        echo "  GHOST_ACR_IMAGE=$GHOST_ACR_IMAGE"
+        echo "  GHOST_ACR_IMAGE_BASE=$GHOST_ACR_IMAGE_BASE"
         echo "  GHOST_SUBSCRIPTION=$GHOST_SUBSCRIPTION"
         echo "  GHOST_CONTAINER_GROUP=$GHOST_CONTAINER_GROUP"
         ;;
