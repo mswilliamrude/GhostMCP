@@ -321,9 +321,19 @@ async def threat_lookup(
         else:
             report.errors[source] = f"Unknown source: {source}"
 
+    query_lower = query.strip().lower()
     for source, task in tasks:
         try:
             entries = await task
+            # Filter entries to only those matching the query indicator
+            # URLhaus already filters server-side, but ransomwatch/feodo/threatfox return full feeds
+            if source in ("ransomwatch", "feodo", "threatfox"):
+                entries = [
+                    e for e in entries
+                    if query_lower in e.indicator.lower()
+                    or query_lower in e.malware_family.lower()
+                    or any(query_lower in tag.lower() for tag in e.tags)
+                ]
             report.entries.extend(entries)
         except Exception as e:
             report.errors[source] = str(e)

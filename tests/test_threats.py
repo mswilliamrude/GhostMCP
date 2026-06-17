@@ -432,11 +432,11 @@ class TestThreatLookup:
                 ThreatEntry("urlhaus", "http://evil.com", "url", "malware", "emotet", [], "", ""),
             ]
             mock_tf.return_value = [
-                ThreatEntry("threatfox", "10.0.0.1:443", "ip", "c2", "cobalt", [], "", ""),
+                ThreatEntry("threatfox", "evil.com:443", "ip", "c2", "cobalt", [], "", ""),
             ]
             mock_rw.return_value = []
             mock_fe.return_value = [
-                ThreatEntry("feodo", "10.0.0.2", "ip", "c2", "dridex", [], "", ""),
+                ThreatEntry("feodo", "evil.com", "ip", "c2", "dridex", [], "", ""),
             ]
 
             report = await threat_lookup("evil.com")
