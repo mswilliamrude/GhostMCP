@@ -717,3 +717,10 @@ Note: Results vary by country. GDPR regions have limited data.
 - GDPR (EU): strict consent requirements for personal data processing
 - GhostMCP provides OSINT from PUBLIC sources only — never private databases
 - All results marked with source + confidence to prevent misattribution
+## Known Issues
+
+- DDG HTML endpoint now returns 202 + JS-required page (mid-2026 change)
+- Needs: either use DDG lite (https://lite.duckduckgo.com/lite/?q=) or DDG API
+- Google scraper needs curl_cffi for reliable results (httpx gets blocked)
+- Serper.dev works perfectly when SERPER_API_KEY is set
+
