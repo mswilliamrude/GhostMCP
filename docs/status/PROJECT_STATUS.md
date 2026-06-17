@@ -127,3 +127,21 @@
 | Ghost Sprint 6: Wireless intel | WiGLE API, BSSID/SSID lookup, Bluetooth tracking | Low |
 | Ghost Sprint 6b: Cellular intel | IMSI/IMEI decode, OpenCelliD tower geolocation | Low |
 | ACR deployment | Push to wdrcentralus.azurecr.io, ACI container group, persistent daemon mode | When stable |
+
+## Research (OSINT Tool Integration)
+
+Evaluated 2026-06-17. These are candidate integrations — not committed to sprints yet.
+
+| Tool | What It Does | API Type | Cost | Integration Assessment |
+|------|-------------|----------|------|----------------------|
+| **HIBP** | Email/domain breach lookups — "has this email been in a data breach?" | REST API, clean JSON | Free single lookups, $3.50/mo for API key (bulk) | **BUILD** — Easy integration, high value, clean API. `ghost_breach` tool. Already planned for Sprint 4. |
+| **IntelTechniques** | Michael Bazzell's OSINT search aggregator — generates search URLs across dozens of engines per input type (email, phone, username, name, address) | No API — URL template logic | Free (we replicate the logic) | **BUILD** — Zero API cost. Build a URL template library: given email/phone/username, generate 30+ search URLs across Google, social media, public records, court records. Same pattern as our dork templates. `ghost_osint_urls` tool. |
+| **Dehashed** | Leaked credential database search — email, username, IP, hash, password lookups against breach data | REST API with key | $5/week subscription | **BUILD (optional key)** — Very powerful for incident response. `ghost_breach_search` tool with DEHASHED_API_KEY env var. Similar pattern to Serper (works great with key, disabled without). Legally gray — results are from leaked databases. |
+| **Epieos** | Email → Google account info, linked services, profile pics | No public API — web scraping | Free | **DEFER** — Fragile scraping target, limited value vs HIBP. Could break anytime. Revisit if they release an API. |
+| **Maltego** | Graph-based OSINT correlation with visual link analysis | Paid transforms, Community Edition limited | $999/yr (Pro) | **SKIP** — Maltego is a GUI visualization tool. We don't need it — Unimind's Knowledge Graph + GhostMCP's data feeds already replicate what Maltego transforms do, minus the GUI. Building transforms is what we're already doing with each `ghost_*` tool. |
+| **PimEyes** | Reverse face image search — upload photo, find matches across the internet | Paid API only | $30+/month | **SKIP** — Ethical and legal concerns with unsanctioned face search. Powerful but risky to include. Revisit only if there's a specific authorized use case (e.g., security team identity verification). |
+
+### Priority for Integration
+1. HIBP (Sprint 4 — easy win, clean API)
+2. IntelTechniques URL generator (Sprint 5 — zero cost, high OSINT value)
+3. Dehashed (Sprint 5+ — powerful but requires paid key + legal awareness)
