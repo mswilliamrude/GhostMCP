@@ -1,8 +1,10 @@
-"""Subdomain enumeration via Certificate Transparency (crt.sh)."""
+"""Subdomain enumeration via Certificate Transparency (crt.sh) and DNS brute force."""
 
 from __future__ import annotations
 
+import asyncio
 import re
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -130,3 +132,64 @@ async def enumerate_subdomains(
         return SubdomainReport(domain=domain, error=f"Unexpected error: {e}")
 
     return _parse_crtsh_response(data, domain, include_expired=include_expired)
+
+
+# ---------------------------------------------------------------------------
+# DNS brute force
+# ---------------------------------------------------------------------------
+
+DEFAULT_WORDLIST: list[str] = [
+    "www", "mail", "ftp", "api", "dev", "staging", "admin", "test", "blog",
+    "shop", "app", "cdn", "ns1", "ns2", "mx", "vpn", "remote", "git", "ci",
+    "jenkins", "grafana", "prometheus", "kibana", "elastic", "redis", "postgres",
+    "mongo", "mysql", "db", "cache", "queue", "worker", "cron", "backup",
+    "media", "static", "assets", "img", "docs", "wiki", "help", "support",
+    "portal", "sso", "auth", "login", "status", "health", "internal",
+]
+
+DNS_CONCURRENCY = 10
+
+
+def _resolve_host(fqdn: str, timeout: float) -> bool:
+    """Try to resolve an FQDN via DNS A record lookup. Returns True if resolved."""
+    try:
+        socket.setdefaulttimeout(timeout)
+        socket.getaddrinfo(fqdn, None, socket.AF_INET, socket.SOCK_STREAM)
+        return True
+    except (socket.gaierror, socket.timeout, OSError):
+        return False
+
+
+async def dns_brute_force(
+    domain: str,
+    wordlist: list[str] | None = None,
+    timeout: float = 2.0,
+) -> list[str]:
+    """Try common subdomain prefixes via DNS A record resolution.
+
+    Args:
+        domain: Target domain (e.g. "example.com").
+        wordlist: List of subdomain prefixes to try. Uses DEFAULT_WORDLIST if None.
+        timeout: Timeout per DNS lookup in seconds.
+
+    Returns:
+        Sorted list of subdomains that resolved successfully.
+    """
+    domain = domain.strip().lower()
+    prefixes = wordlist if wordlist is not None else DEFAULT_WORDLIST
+    semaphore = asyncio.Semaphore(DNS_CONCURRENCY)
+    resolved: list[str] = []
+    lock = asyncio.Lock()
+
+    async def _check(prefix: str) -> None:
+        fqdn = f"{prefix}.{domain}"
+        async with semaphore:
+            found = await asyncio.to_thread(_resolve_host, fqdn, timeout)
+        if found:
+            async with lock:
+                resolved.append(fqdn)
+
+    tasks = [_check(p) for p in prefixes]
+    await asyncio.gather(*tasks)
+
+    return sorted(resolved)

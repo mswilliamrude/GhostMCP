@@ -25,8 +25,11 @@ from .dorking.builder import build_dork, from_template
 from .dorking.templates import get_template_names
 from .proxy.manager import ProxyManager
 from .proxy.fingerprint import get_headers
+from .recon.certs import CertReport, inspect_cert
 from .recon.hashes import HashLookup, detect_hash_type, HashReport
-from .recon.subdomains import enumerate_subdomains, SubdomainReport
+from .recon.subdomains import enumerate_subdomains, dns_brute_force, SubdomainReport
+from .recon.vulns import lookup_cve, search_cves, check_package, CVEResult, PackageVulnResult
+from .recon.threats import threat_lookup, ThreatReport
 from .utils.config import ParanoiaLevel
 
 
@@ -615,8 +618,8 @@ def _format_subdomain_report(report: SubdomainReport) -> str:
 @mcp.tool(
     name="ghost_subdomains",
     description=(
-        "Enumerate subdomains for a domain using Certificate Transparency logs (crt.sh). "
-        "Returns deduplicated, sorted list of subdomains found in issued certificates."
+        "Enumerate subdomains for a domain using Certificate Transparency logs (crt.sh), "
+        "DNS brute force, or both. Returns deduplicated, sorted list of subdomains."
     ),
     parameters={
         "domain": {
@@ -628,18 +631,358 @@ def _format_subdomain_report(report: SubdomainReport) -> str:
             "description": "Include certs past their not_after date (default false).",
             "default": False,
         },
+        "method": {
+            "type": "string",
+            "description": "Enumeration method: crt (crt.sh CT logs), dns (DNS brute force), all (both merged).",
+            "default": "crt",
+        },
     },
 )
 async def ghost_subdomains(
     domain: str,
     include_expired: bool = False,
+    method: str = "crt",
 ) -> str:
-    """Enumerate subdomains via Certificate Transparency logs."""
+    """Enumerate subdomains via Certificate Transparency logs and/or DNS brute force."""
     if not domain:
         return "Error: domain is required."
 
-    report = await enumerate_subdomains(domain, include_expired=include_expired)
-    return _format_subdomain_report(report)
+    method = method.strip().lower()
+    if method not in ("crt", "dns", "all"):
+        return f"Error: unknown method '{method}'. Use crt, dns, or all."
+
+    if method == "crt":
+        report = await enumerate_subdomains(domain, include_expired=include_expired)
+        return _format_subdomain_report(report)
+
+    if method == "dns":
+        found = await dns_brute_force(domain)
+        if not found:
+            return f"No subdomains found via DNS brute force for {domain}."
+        lines = [f"DNS brute force: {domain}", f"Subdomains found: {len(found)}", ""]
+        for sub in found:
+            lines.append(f"  {sub}")
+        return "\n".join(lines)
+
+    if method == "all":
+        # Run both in parallel, merge and deduplicate
+        crt_report, dns_found = await asyncio.gather(
+            enumerate_subdomains(domain, include_expired=include_expired),
+            dns_brute_force(domain),
+        )
+        all_subs = sorted(set(crt_report.subdomains) | set(dns_found))
+        lines = [
+            f"Subdomain enumeration (all methods): {domain}",
+            f"  crt.sh: {len(crt_report.subdomains)} found ({crt_report.total_certs} certs)",
+            f"  DNS brute: {len(dns_found)} found",
+            f"  Combined unique: {len(all_subs)}",
+            "",
+        ]
+        for sub in all_subs:
+            source = []
+            if sub in crt_report.subdomains:
+                source.append("crt")
+            if sub in dns_found:
+                source.append("dns")
+            lines.append(f"  {sub}  [{','.join(source)}]")
+        return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Vulnerability intelligence tools
+# ---------------------------------------------------------------------------
+
+def _format_cve_result(cve: CVEResult) -> str:
+    """Format a CVEResult into readable text."""
+    lines: list[str] = []
+    lines.append(f"{cve.cve_id} [{cve.severity}]")
+    if cve.cvss_score is not None:
+        lines.append(f"  CVSS: {cve.cvss_score}")
+    lines.append(f"  Published: {cve.published}")
+    lines.append(f"  {cve.description[:300]}")
+
+    if cve.epss_score is not None:
+        lines.append(f"  EPSS: {cve.epss_score:.4f} (percentile: {cve.epss_percentile:.4f})")
+    if cve.in_kev:
+        lines.append("  ** CISA KEV: Known Exploited Vulnerability **")
+
+    if cve.affected_products:
+        lines.append(f"  Affected: {', '.join(cve.affected_products[:5])}")
+    if cve.references:
+        lines.append(f"  Refs: {', '.join(cve.references[:3])}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_cve",
+    description=(
+        "Look up a specific CVE by ID or search for CVEs by keyword. "
+        "Returns severity, CVSS score, EPSS exploit probability, and "
+        "CISA KEV status."
+    ),
+    parameters={
+        "cve_id": {
+            "type": "string",
+            "description": "Specific CVE ID to look up (e.g. CVE-2024-1234).",
+        },
+        "keyword": {
+            "type": "string",
+            "description": "Search keyword for CVE lookup.",
+        },
+        "max_results": {
+            "type": "integer",
+            "description": "Maximum results for keyword search (default 5).",
+            "default": 5,
+        },
+    },
+)
+async def ghost_cve(
+    cve_id: Optional[str] = None,
+    keyword: Optional[str] = None,
+    max_results: int = 5,
+) -> str:
+    """Look up a specific CVE or search by keyword."""
+    if not cve_id and not keyword:
+        return "Error: Provide either cve_id or keyword."
+
+    if cve_id:
+        result = await lookup_cve(cve_id)
+        if result is None:
+            return f"CVE not found: {cve_id}"
+        return _format_cve_result(result)
+
+    # Keyword search
+    results = await search_cves(keyword, max_results=int(max_results))
+    if not results:
+        return f"No CVEs found for: {keyword}"
+
+    lines = [f"CVE search: {keyword} ({len(results)} results)\n"]
+    for cve in results:
+        lines.append(_format_cve_result(cve))
+        lines.append("")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_vuln",
+    description=(
+        "Check a package for known vulnerabilities via OSV.dev. "
+        "Supports PyPI, npm, Go, crates.io, and other ecosystems."
+    ),
+    parameters={
+        "package": {
+            "type": "string",
+            "description": "Package name to check (e.g. requests, lodash).",
+        },
+        "ecosystem": {
+            "type": "string",
+            "description": "Package ecosystem: PyPI, npm, Go, crates.io, etc.",
+            "default": "PyPI",
+        },
+    },
+)
+async def ghost_vuln(
+    package: str,
+    ecosystem: str = "PyPI",
+) -> str:
+    """Check a package for known vulnerabilities."""
+    if not package:
+        return "Error: package is required."
+
+    result = await check_package(package, ecosystem=ecosystem)
+
+    if not result.vulnerabilities:
+        return f"No known vulnerabilities for {ecosystem}/{package}."
+
+    lines = [f"Vulnerabilities for {ecosystem}/{package}: {len(result.vulnerabilities)} found\n"]
+    for vuln in result.vulnerabilities:
+        lines.append(_format_cve_result(vuln))
+        lines.append("")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Threat intelligence tool
+# ---------------------------------------------------------------------------
+
+def _format_threat_report(report: ThreatReport) -> str:
+    """Format a ThreatReport into readable text."""
+    lines: list[str] = []
+    lines.append(f"Threat lookup: {report.query}")
+    lines.append(f"Sources queried: {', '.join(report.sources_queried)}")
+    lines.append(f"Total indicators: {len(report.entries)}")
+    lines.append("")
+
+    if report.errors:
+        for src, err in report.errors.items():
+            lines.append(f"  [{src}] Error: {err}")
+        lines.append("")
+
+    for entry in report.entries:
+        lines.append(f"[{entry.source}] {entry.indicator}")
+        lines.append(f"  Type: {entry.indicator_type} | Threat: {entry.threat_type}")
+        if entry.malware_family:
+            lines.append(f"  Malware: {entry.malware_family}")
+        if entry.tags:
+            lines.append(f"  Tags: {', '.join(entry.tags)}")
+        if entry.first_seen:
+            lines.append(f"  First seen: {entry.first_seen}")
+        if entry.reference:
+            lines.append(f"  Ref: {entry.reference}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_threat",
+    description=(
+        "Look up an indicator (URL, IP, domain, hash) across threat intelligence "
+        "feeds including URLhaus, ThreatFox, RansomWatch, and Feodo Tracker."
+    ),
+    parameters={
+        "query": {
+            "type": "string",
+            "description": "Indicator to look up (URL, IP, domain, or hash).",
+        },
+        "sources": {
+            "type": "string",
+            "description": "Comma-separated sources: urlhaus,threatfox,ransomwatch,feodo. Default: all.",
+        },
+        "days": {
+            "type": "integer",
+            "description": "Days of recent IOCs for ThreatFox (default 7).",
+            "default": 7,
+        },
+    },
+)
+async def ghost_threat(
+    query: str,
+    sources: Optional[str] = None,
+    days: int = 7,
+) -> str:
+    """Look up an indicator across threat intelligence feeds."""
+    if not query:
+        return "Error: query is required."
+
+    source_list = None
+    if sources:
+        source_list = [s.strip() for s in sources.split(",")]
+
+    report = await threat_lookup(query, sources=source_list, days=int(days))
+    return _format_threat_report(report)
+
+    if method == "dns":
+        found = await dns_brute_force(domain)
+        lines: list[str] = []
+        lines.append(f"DNS brute force: {domain}")
+        lines.append(f"Subdomains found: {len(found)}")
+        lines.append("")
+        if not found:
+            lines.append("No subdomains resolved.")
+        else:
+            for sub in found:
+                lines.append(f"  {sub}")
+        return "\n".join(lines)
+
+    # method == "all" — run both, merge and deduplicate
+    crt_report, dns_found = await asyncio.gather(
+        enumerate_subdomains(domain, include_expired=include_expired),
+        dns_brute_force(domain),
+    )
+    merged: set[str] = set(crt_report.subdomains) | set(dns_found)
+    all_sorted = sorted(merged)
+
+    lines = []
+    lines.append(f"Subdomain enumeration (all methods): {domain}")
+    if crt_report.error:
+        lines.append(f"crt.sh error: {crt_report.error}")
+    else:
+        lines.append(f"crt.sh certificates found: {crt_report.total_certs}")
+    lines.append(f"DNS brute force resolved: {len(dns_found)}")
+    lines.append(f"Unique subdomains (merged): {len(all_sorted)}")
+    lines.append("")
+    if not all_sorted:
+        lines.append("No subdomains found.")
+    else:
+        for sub in all_sorted:
+            lines.append(f"  {sub}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# TLS certificate inspection tool
+# ---------------------------------------------------------------------------
+
+def _format_cert_report(report: CertReport) -> str:
+    """Format a CertReport into readable text."""
+    if report.error:
+        return f"Error inspecting {report.host}:{report.port}: {report.error}"
+
+    lines: list[str] = []
+    lines.append(f"TLS Certificate: {report.host}:{report.port}")
+    lines.append("=" * 50)
+    lines.append(f"Subject:     {report.subject}")
+    lines.append(f"Issuer:      {report.issuer}")
+    lines.append(f"Not Before:  {report.not_before}")
+    lines.append(f"Not After:   {report.not_after}")
+    lines.append(f"Expiry:      {report.days_until_expiry} days")
+    if report.is_expired:
+        lines.append("  ** CERTIFICATE IS EXPIRED **")
+    if report.is_self_signed:
+        lines.append("  ** SELF-SIGNED CERTIFICATE **")
+    lines.append("")
+    lines.append(f"Serial:      {report.serial}")
+    lines.append(f"SHA-256:     {report.fingerprint_sha256}")
+    lines.append(f"Protocol:    {report.protocol}")
+    lines.append(f"Cipher:      {report.cipher}")
+    lines.append(f"Key Type:    {report.key_type}")
+    lines.append("")
+
+    if report.sans:
+        lines.append(f"SANs ({len(report.sans)}):")
+        for san in report.sans:
+            lines.append(f"  {san}")
+        lines.append("")
+
+    if report.chain:
+        lines.append(f"Chain ({len(report.chain)}):")
+        for i, cn in enumerate(report.chain):
+            lines.append(f"  [{i}] {cn}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_cert",
+    description=(
+        "Inspect the TLS certificate of a host. Connects to host:port, pulls the "
+        "certificate, and reports subject, issuer, expiry, SANs, fingerprint, "
+        "protocol, cipher suite, key type, chain, and self-signed/expired status."
+    ),
+    parameters={
+        "host": {
+            "type": "string",
+            "description": "Target hostname to inspect (e.g. example.com).",
+        },
+        "port": {
+            "type": "integer",
+            "description": "TLS port (default 443).",
+            "default": 443,
+        },
+    },
+)
+async def ghost_cert(
+    host: str,
+    port: int = 443,
+) -> str:
+    """Inspect the TLS certificate of a host."""
+    if not host:
+        return "Error: host is required."
+
+    report = await inspect_cert(host, port=port)
+    return _format_cert_report(report)
 
 
 # ---------------------------------------------------------------------------
