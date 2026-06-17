@@ -50,3 +50,34 @@
 | 2026-06-16 | Tor for ghost mode | Free, proven, circuit rotation for per-request IP changes |
 | 2026-06-16 | No external AI dependency | Pure search tool — doesn't need LLM to function |
 | 2026-06-16 | Classification: personal | Security research tool, personal use |
+
+## Sprint 2.5: Vulnerability Intelligence (Free APIs)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| NVD CVE lookup (NIST API) | Pending | Full CVE details + severity + CPE |
+| OSV.dev integration | Pending | Package vulns by ecosystem (Python/JS/Go/Rust) |
+| GitHub Advisories (GHSA) | Pending | Security advisories via GraphQL |
+| CISA KEV feed | Pending | Known actively exploited vulns (JSON) |
+| EPSS scoring | Pending | Exploit likelihood probability |
+| ExploitDB search | Pending | Public exploits + PoC lookup |
+| pip-audit integration | Pending | Scan requirements.txt / pyproject.toml |
+| Tech stack → CVE mapping | Pending | Fingerprint domain → find vulns for detected stack |
+
+### CLI Interface
+```
+ghost vuln python flask              # Package CVEs from OSV + GHSA
+ghost vuln cve CVE-2024-1234         # Full CVE details + EPSS + KEV status
+ghost vuln scan requirements.txt     # Audit Python dependencies
+ghost vuln domain example.com        # Tech fingerprint → known CVEs
+ghost vuln exploit CVE-2024-1234     # Check ExploitDB for public PoCs
+ghost vuln kev                       # List currently exploited vulns (CISA)
+```
+
+### Free API Endpoints
+- NVD: `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={id}`
+- OSV: `https://api.osv.dev/v1/query` (POST)
+- GHSA: GitHub GraphQL API (free token)
+- CISA KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
+- EPSS: `https://api.first.org/data/v1/epss?cve={id}`
+- ExploitDB: searchsploit CLI or `https://www.exploit-db.com/search?cve={id}`
