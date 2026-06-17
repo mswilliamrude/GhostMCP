@@ -296,3 +296,94 @@ Score starts at 0 (neutral)
 - MITRE ATT&CK: `https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json`
 - GTFOBins: `https://gtfobins.github.io/` (scrape or GitHub API)
 - LOLBAS: `https://lolbas-project.github.io/api/lolbas.json`
+
+## Sprint 2c: Certificate Verification (TLS Inspection)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Connect and pull TLS cert from host:port | Pending | Pure Python ssl module, no openssl needed |
+| Parse certificate fields (subject, issuer, SANs, dates) | Pending | x509 parsing via ssl/cryptography lib |
+| Expiry check (days until expiration) | Pending | Alert if < 30 days |
+| Chain validation (intermediate + root) | Pending | Verify full chain of trust |
+| SAN extraction (all hostnames covered) | Pending | Subject Alternative Names |
+| Issuer identification (Let's Encrypt, DigiCert, etc) | Pending | Who issued it |
+| Certificate pinning detection | Pending | HPKP / expect-CT headers |
+| Self-signed detection | Pending | Flag untrusted certs |
+| Certificate transparency lookup (crt.sh cross-ref) | Pending | Was this cert logged publicly |
+| Wildcard detection | Pending | *.example.com coverage |
+| Protocol/cipher enumeration | Pending | TLS 1.2/1.3, cipher suites |
+| OCSP stapling check | Pending | Revocation status |
+
+### CLI Interface
+```
+ghost cert example.com                  # Full cert inspection (port 443 default)
+ghost cert example.com:8443             # Custom port
+ghost cert example.com --chain          # Show full certificate chain
+ghost cert example.com --expiry         # Just days until expiration
+ghost cert example.com --sans           # Just SANs (all covered hostnames)
+ghost cert example.com --json           # Machine-readable output
+```
+
+### Example Output
+```
+ghost cert example.com
+
+TLS Certificate: example.com:443
+═══════════════════════════════════════════════════════
+Subject:      CN=example.com
+Issuer:       CN=R3, O=Let's Encrypt, C=US
+Valid from:   2024-01-15 00:00:00 UTC
+Valid until:  2024-04-14 23:59:59 UTC
+Expires in:   47 days ✅
+
+SANs (Subject Alternative Names):
+  • example.com
+  • www.example.com
+  • api.example.com
+  • *.dev.example.com (wildcard)
+
+Chain:
+  [0] CN=example.com (leaf)
+  [1] CN=R3, O=Let's Encrypt (intermediate)
+  [2] CN=ISRG Root X1 (root, trusted)
+
+Protocol:     TLS 1.3
+Cipher:       TLS_AES_256_GCM_SHA384
+Key:          EC 256-bit (P-256)
+Serial:       0A:1B:2C:3D:4E:5F...
+Fingerprint:  SHA256:ab:cd:ef:12:34...
+
+OCSP:         Stapled ✅ (status: good)
+CT Logged:    Yes (3 logs)
+Self-signed:  No
+Wildcard:     Yes (*.dev.example.com)
+
+Provenance:
+  Source:     Direct TLS connection
+  Checked:    2024-02-27T15:30:00Z (live query)
+```
+
+### Implementation
+```python
+# Pure Python — no openssl binary needed
+import ssl
+import socket
+from cryptography import x509  # for detailed parsing
+from cryptography.hazmat.backends import default_backend
+
+# Connect and grab cert
+context = ssl.create_default_context()
+with socket.create_connection((host, port)) as sock:
+    with context.wrap_socket(sock, server_hostname=host) as tls:
+        cert_der = tls.getpeercert(binary_form=True)
+        cert_pem = ssl.DER_cert_to_PEM_cert(cert_der)
+        cert_info = tls.getpeercert()  # parsed dict
+        cipher = tls.cipher()
+        version = tls.version()
+```
+
+### Dependencies
+- `ssl` (stdlib — always available)
+- `socket` (stdlib)
+- `cryptography` (optional, for detailed x509 parsing + chain validation)
+- No external services needed — direct connection to target
