@@ -196,3 +196,44 @@ ghost threat samples CVE-2024-x
 - Integration: GhostMCP discovers → ForensicsMCP analyzes → Unimind stores intelligence
 - MITRE ATT&CK auto-mapping from observed behaviors
 - Classification: all forensics data at level 3+ (sensitive)
+
+## Sprint 2.5b: Hash Intelligence
+
+| Task | Status | Notes |
+|------|--------|-------|
+| CIRCL hashlookup (known file identification) | Pending | Free, no key, identifies legit vs unknown files |
+| MalwareBazaar hash lookup | Pending | Free, no key, malware family + tags |
+| ThreatFox hash search | Pending | Free, no key, C2 + campaign associations |
+| VirusTotal hash lookup | Pending | Free tier (4/min), 70+ AV results |
+| Hybrid Analysis hash lookup | Pending | Free with key, sandbox results |
+
+### CLI Interface
+```
+ghost hash <md5|sha1|sha256|sha384|sha512>    # Identify a file by hash
+ghost hash --file /path/to/file               # Compute hash + lookup
+ghost hash --batch hashes.txt                 # Bulk lookup from file
+```
+
+### Output Format
+```
+Hash: abc123def456...
+Type: SHA256
+
+CIRCL NSRL:      UNKNOWN (not a known legitimate file)
+MalwareBazaar:   Family=Emotet | Tags=[banker,trojan] | First seen: 2024-03-15
+ThreatFox:       C2=185.x.x.x:443 | Campaign=Emotet-E5
+VirusTotal:      47/72 detections | Name=Trojan.GenericKD.46789
+Hybrid Analysis: Threat score 95/100 | Sandbox: Win10-64
+
+Verdict: MALICIOUS (high confidence)
+```
+
+### Free API Endpoints (no key)
+- CIRCL: `https://hashlookup.circl.lu/lookup/sha256/{hash}`
+- MalwareBazaar: `POST https://mb-api.abuse.ch/api/v1/` body: `query=get_info&hash={hash}`
+- ThreatFox: `POST https://threatfox-api.abuse.ch/api/v1/` body: `query=search_hash&hash={hash}`
+
+### Keyed APIs (optional, adds depth)
+- VirusTotal: `GET https://www.virustotal.com/api/v3/files/{hash}` (VT_API_KEY)
+- Hybrid Analysis: `GET https://www.hybrid-analysis.com/api/v2/search/hash` (HA_API_KEY)
+- Malshare: `GET https://malshare.com/api.php?action=details&hash={hash}` (MALSHARE_API_KEY)
