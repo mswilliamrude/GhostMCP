@@ -56,7 +56,8 @@ GHOST_ACR_IMAGE_BASE="${GHOST_ACR_IMAGE_BASE:-ghostmcp-base}"
 GHOST_SUBSCRIPTION="${GHOST_SUBSCRIPTION:-AEPSovereign_EncryptedTransport_Sandbox}"
 GHOST_RESOURCE_GROUP="${GHOST_RESOURCE_GROUP:-aet-apt-localdev-es2}"
 GHOST_LOCATION="${GHOST_LOCATION:-centralus}"
-GHOST_SUBNET_ID="${GHOST_SUBNET_ID:-/subscriptions/.../subnets/aci-subnet}"  # placeholder
+GHOST_VNET="${GHOST_VNET:-aet-psrdev-centralus-vnet}"
+GHOST_SUBNET="${GHOST_SUBNET:-aet-psrdev-centralus-docker0}"
 GHOST_CONTAINER_GROUP="${GHOST_CONTAINER_GROUP:-ghostmcp-app}"
 
 # --- Resolve source directory ---
@@ -345,6 +346,16 @@ cmd_deploy() {
     fi
 
     echo "[INFO] Deploying GhostMCP to ACI ($GHOST_CONTAINER_GROUP)..."
+
+    # Resolve subscription ID for subnet path
+    local SUB_ID
+    SUB_ID=$(az account show --subscription "$GHOST_SUBSCRIPTION" --query id -o tsv)
+    if [ -z "$SUB_ID" ]; then
+        echo "[ERROR] Failed to resolve subscription ID"
+        exit 1
+    fi
+    local GHOST_SUBNET_ID="/subscriptions/${SUB_ID}/resourceGroups/${GHOST_RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${GHOST_VNET}/subnets/${GHOST_SUBNET}"
+    echo "[INFO] Subnet: $GHOST_SUBNET_ID"
 
     # Get ACR credentials
     local ACR_PW
