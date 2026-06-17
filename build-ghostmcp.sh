@@ -457,7 +457,7 @@ cmd_teardown() {
 
 # --- Main dispatch ---
 case "${1:-help}" in
-    build)    cmd_build ;;
+    build)    cmd_build "$@" ;;
     run)      cmd_run ;;
     stop)     cmd_stop ;;
     restart)  cmd_restart ;;
