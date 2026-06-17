@@ -1099,21 +1099,105 @@ async def _health_handler(request):
 
 
 def main() -> None:
-    """Run GhostMCP as an MCP server (stdio) or HTTP server."""
+    """Run GhostMCP as an MCP server (stdio) or HTTP/WS server."""
     mode = os.environ.get("GHOST_MODE", "stdio")
 
     if mode == "server":
-        # HTTP server mode — serves health endpoint + could serve MCP over HTTP in future
+        # HTTP server mode — SSE + WebSocket + health endpoint
         import uvicorn
         from starlette.applications import Starlette
-        from starlette.routing import Route
+        from starlette.routing import Route, WebSocketRoute
+        from starlette.responses import JSONResponse
+        from starlette.websockets import WebSocket
 
+        # --- SSE Transport (for opencode "type": "remote" with /sse URL) ---
+        _sse_clients: dict[str, asyncio.Queue] = {}
+
+        async def sse_endpoint(request):
+            """SSE endpoint — client connects here, gets a session_id, then POSTs to /mcp."""
+            from starlette.responses import StreamingResponse
+            import uuid
+
+            session_id = str(uuid.uuid4())
+            queue: asyncio.Queue = asyncio.Queue()
+            _sse_clients[session_id] = queue
+
+            async def event_stream():
+                # First event: tell client where to POST messages
+                yield f"event: endpoint\ndata: /mcp?session_id={session_id}\n\n"
+                try:
+                    while True:
+                        data = await queue.get()
+                        yield f"event: message\ndata: {data}\n\n"
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    _sse_clients.pop(session_id, None)
+
+            return StreamingResponse(event_stream(), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+        async def mcp_post_endpoint(request):
+            """Receive MCP JSON-RPC messages via POST, return response via SSE stream."""
+            session_id = request.query_params.get("session_id")
+            if not session_id or session_id not in _sse_clients:
+                return JSONResponse({"error": "Invalid or missing session_id"}, status_code=400)
+
+            body = await request.body()
+            raw = body.decode("utf-8")
+
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+                await _sse_clients[session_id].put(error_resp)
+                return JSONResponse({"status": "error"}, status_code=200)
+
+            response = await mcp.handle_request(message)
+            if response:
+                await _sse_clients[session_id].put(json.dumps(response))
+
+            return JSONResponse({"status": "ok"}, status_code= 202)
+
+        # --- WebSocket Transport ---
+        async def ws_endpoint(websocket: WebSocket):
+            """WebSocket endpoint — bidirectional JSON-RPC."""
+            await websocket.accept()
+            try:
+                while True:
+                    raw = await websocket.receive_text()
+                    try:
+                        message = json.loads(raw)
+                    except json.JSONDecodeError:
+                        error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+                        await websocket.send_text(error_resp)
+                        continue
+
+                    response = await mcp.handle_request(message)
+                    if response:
+                        await websocket.send_text(json.dumps(response))
+            except Exception:
+                pass
+            finally:
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
+
+        # --- App with all routes ---
         app = Starlette(routes=[
             Route("/health", _health_handler, methods=["GET"]),
+            Route("/sse", sse_endpoint, methods=["GET"]),
+            Route("/mcp", mcp_post_endpoint, methods=["POST"]),
+            WebSocketRoute("/ws", ws_endpoint),
         ])
 
         port = int(os.environ.get("GHOST_PORT", "8080"))
-        print(f"[GhostMCP] Starting HTTP server on port {port} (health endpoint)")
+        print(f"[GhostMCP] Starting server on port {port}")
+        print(f"[GhostMCP]   Health:    http://0.0.0.0:{port}/health")
+        print(f"[GhostMCP]   SSE:       http://0.0.0.0:{port}/sse")
+        print(f"[GhostMCP]   WebSocket: ws://0.0.0.0:{port}/ws")
+        print(f"[GhostMCP]   Tools:     {len(mcp._tools)}")
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     else:
         # Default: stdio MCP server
