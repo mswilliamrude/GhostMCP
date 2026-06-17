@@ -617,3 +617,103 @@ Provenance:
 - SS7/Diameter interception: ILLEGAL without carrier authorization
 - IMSI catching (Stingray): ILLEGAL without law enforcement authority
 - GhostMCP will NEVER implement active cellular interception
+
+## Sprint 5c: People Intelligence (Phone/Name/Address)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Reverse phone lookup | Pending | Number → name, carrier, location, spam reports |
+| Name search | Pending | Name → associated addresses, phones, emails, social |
+| Address search | Pending | Address → current/past residents, property records |
+| Phone number validation | Pending | Is it valid? Mobile/landline? Active? |
+| Carrier identification | Pending | Phone number → carrier (free via libphonenumber) |
+| Country/region from number | Pending | E.164 parsing → country + region |
+| Caller ID / spam scoring | Pending | Community reports of spam/scam |
+| Social media from phone/email | Pending | Reverse lookup → linked accounts |
+| Public records aggregation | Pending | Court records, business filings, property |
+
+### CLI Interface
+```
+ghost person --phone +15125551234           # Reverse phone lookup
+ghost person --phone +15125551234 --carrier # Just carrier info
+ghost person --name "John Smith" --state TX # Name search with location
+ghost person --address "123 Main St, Austin TX"  # Address lookup
+ghost person --email user@example.com       # Email → associated info
+```
+
+### Free Resources
+
+| Source | What It Provides | Free? | Access |
+|--------|-----------------|-------|--------|
+| **libphonenumber** (Google) | Number validation, carrier, country, type (mobile/fixed) | ✅ local | `pip install phonenumbers` |
+| **NumVerify** | Phone validation + carrier + location | ✅ (100/mo free) | REST API |
+| **Truecaller** | Caller ID / spam database | ⚠️ Limited scrape | No official free API |
+| **OpenCNAM** | Caller Name (CNAM) lookup | ⚠️ Paid | REST API |
+| **USPhonebook** | Reverse phone (US) | ✅ scrape | Web |
+| **Whitepages** | Name/phone/address (US) | ⚠️ Limited | Web/API paid |
+| **192.com** | UK directory | ⚠️ Limited | Web |
+| **Pipl** (now Lusha) | People search aggregator | ⚠️ Paid | API |
+| **That's Them** | Free people search (US) | ✅ | Web |
+| **SpyDialer** | Reverse phone (US) | ✅ | Web |
+| **Sync.me** | Global caller ID | ⚠️ Limited | App/web |
+| **OSINT Industries** | Email/phone → full profile | ⚠️ Paid | API |
+
+### Globally Available (No US Bias)
+
+| Region | Sources |
+|--------|---------|
+| US/Canada | USPhonebook, That's Them, SpyDialer, Whitepages |
+| UK | 192.com, BT Phone Book |
+| EU | Local directories + GDPR constraints |
+| Australia | White Pages AU |
+| Global | libphonenumber (validation), NumVerify, Truecaller |
+
+### Example Output
+```
+ghost person --phone +15125551234
+
+Phone Lookup: +1 (512) 555-1234
+═══════════════════════════════════════════════
+Country:      United States (+1)
+Region:       Texas (512 area code)
+Type:         Mobile
+Carrier:      T-Mobile
+Valid:        ✅ (E.164 format valid)
+
+Caller ID:    John M. Smith (confidence: medium)
+Spam reports: 0 (clean)
+
+Associated:
+  Address:    123 Main St, Austin, TX 78701 (2019-present)
+  Email:      jsmith@gmail.com (linked via social)
+  Social:     LinkedIn (John Smith, Austin TX)
+  
+Provenance:
+  Source:     libphonenumber (carrier/type) + USPhonebook (name/address)
+  Checked:    2024-02-27T16:00:00Z
+  Confidence: Medium (multiple sources partially confirm)
+
+Note: Results vary by country. GDPR regions have limited data.
+```
+
+### Implementation Notes
+- **libphonenumber** is the core — validates, identifies carrier, parses E.164
+  ```python
+  import phonenumbers
+  number = phonenumbers.parse("+15125551234")
+  carrier = phonenumbers.carrier.name_for_number(number, "en")  # "T-Mobile"
+  region = phonenumbers.geocoder.description_for_number(number, "en")  # "Texas"
+  ```
+- Free people search sites require scraping (fragile, may break)
+- GDPR makes EU lookups very limited — document this clearly
+- Always note confidence level (single source = low, multiple = medium/high)
+- Never present unverified data as fact — always "associated" not "belongs to"
+
+### Legal / Ethical Notes
+- Phone number → carrier: LEGAL (public allocation data)
+- Reverse lookup via public directories: LEGAL (published information)
+- Scraping paid services without auth: ILLEGAL / ToS violation
+- Storing/redistributing personal data: subject to local privacy laws
+- GDPR (EU): strict consent requirements for personal data processing
+- GhostMCP provides OSINT from PUBLIC sources only — never private databases
+- All results marked with source + confidence to prevent misattribution
