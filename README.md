@@ -269,3 +269,63 @@ async def ghost_fetch(url: str, extract: str = "text"):
 async def ghost_recon(domain: str, modules: list = ["subdomains", "techstack"]):
     """Passive reconnaissance on a domain."""
 ```
+
+---
+
+## Future Integration: ForensicsMCP
+
+GhostMCP finds threats. ForensicsMCP (future project) analyzes them in sandboxes.
+
+```
+Discovery → Analysis → Intelligence
+GhostMCP    ForensicsMCP    Unimind
+(find it)   (understand it) (remember it)
+```
+
+### ForensicsMCP Sandbox Environments (planned)
+- Windows 10/11 (disposable VM)
+- Linux Ubuntu/RHEL (disposable VM)  
+- macOS (VM)
+- iOS (emulator)
+- Android (emulator)
+
+### Workflow
+```
+ghost threat samples CVE-2024-1234     → GhostMCP finds 10 sample URLs
+forensics submit <url>                 → ForensicsMCP downloads + detonates in sandbox
+forensics report                       → Network IOCs, file changes, process tree, ATT&CK mapping
+unimind assimilate                     → Intelligence stored for future reference
+```
+
+### Key Principle
+GhostMCP NEVER executes samples. It finds and lists them.
+ForensicsMCP handles detonation in isolated, disposable environments.
+Unimind stores the resulting intelligence with proper classification.
+
+---
+
+## API Key Configuration
+
+Keys stored in opencode.json (same pattern as other MCP servers):
+
+```json
+{
+  "mcp": {
+    "ghostmcp": {
+      "type": "local",
+      "command": ["python3", "-m", "src.mcp"],
+      "environment": {
+        "OTX_API_KEY": "optional-for-alienvault",
+        "HIBP_API_KEY": "optional-for-breach-monitoring",
+        "SHODAN_API_KEY": "optional-for-infrastructure",
+        "LEAKIX_API_KEY": "optional-for-leak-monitoring",
+        "SERPER_API_KEY": "optional-for-google-search",
+        "GHOST_PARANOIA": "cautious"
+      }
+    }
+  }
+}
+```
+
+All keys are OPTIONAL. Core functionality (DDG, dorking, crt.sh, Abuse.ch, 
+CISA KEV, NVD, OSV, RansomWatch) works without any API keys.

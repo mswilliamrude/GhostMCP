@@ -81,3 +81,118 @@ ghost vuln kev                       # List currently exploited vulns (CISA)
 - CISA KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
 - EPSS: `https://api.first.org/data/v1/epss?cve={id}`
 - ExploitDB: searchsploit CLI or `https://www.exploit-db.com/search?cve={id}`
+
+## Sprint 3.5: Threat Intelligence (Clearnet APIs, No Tor)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Abuse.ch integration (ThreatFox, URLhaus, MalwareBazaar, Feodo) | Pending | Malware C2s, IOCs, samples |
+| AlienVault OTX pulses | Pending | Community threat intel, IOC feeds |
+| RansomWatch/Ransomware.live | Pending | Ransomware victim tracking |
+| HIBP breach monitoring | Pending | Recent breach announcements |
+| CISA KEV active exploits | Pending | Already in Sprint 2.5, cross-ref here |
+| LeakIX integration | Pending | Exposed services, leaked data |
+| Malware sample lookup by CVE | Pending | MalwareBazaar + URLhaus → top 10 sample URLs |
+
+### CLI Interface
+```
+ghost threat live                    # Last 72hrs: Abuse.ch + OTX IOCs
+ghost threat ransomware              # Recent ransomware victim postings
+ghost threat breaches                # HIBP recent breaches
+ghost threat exploits-sold           # ThreatFox tagged "exploit" + OTX
+ghost threat campaign "emotet"       # Filter by malware family
+ghost threat samples CVE-2024-1234   # Top 10 malware sample URLs matching CVE
+```
+
+### API Keys (added to opencode.json environment)
+```json
+{
+  "environment": {
+    "OTX_API_KEY": "your-otx-key",
+    "HIBP_API_KEY": "your-hibp-key",
+    "LEAKIX_API_KEY": "your-leakix-key",
+    "SHODAN_API_KEY": "your-shodan-key"
+  }
+}
+```
+Keys are OPTIONAL — Abuse.ch, RansomWatch, CISA KEV work without keys.
+Keys stored in opencode.json environment section (same pattern as PERPLEXITY_API_KEY).
+
+### Free API Endpoints (no key)
+- Abuse.ch ThreatFox: `https://threatfox-api.abuse.ch/api/v1/`
+- Abuse.ch URLhaus: `https://urlhaus-api.abuse.ch/v1/`
+- Abuse.ch MalwareBazaar: `https://mb-api.abuse.ch/api/v1/`
+- Abuse.ch Feodo: `https://feodotracker.abuse.ch/downloads/ipblocklist.json`
+- RansomWatch: `https://raw.githubusercontent.com/joshhighet/ransomwatch/main/posts.json`
+- CISA KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
+
+### Malware Sample Lookup (CVE → Samples)
+```
+Query flow:
+  1. User asks: ghost threat samples CVE-2024-1234
+  2. GhostMCP queries MalwareBazaar: tag=CVE-2024-1234
+  3. Also queries URLhaus for URLs distributing exploits for that CVE
+  4. Returns top 10 sample URLs + hashes + first_seen dates
+  5. WARNING: these are LIVE malware URLs — display only, no auto-download
+```
+
+---
+
+## Future: ForensicsMCP Integration (Sprint 5+)
+
+### Vision
+GhostMCP finds the threat → ForensicsMCP analyzes it in a sandbox.
+
+```
+GhostMCP                          ForensicsMCP (future)
+─────────                         ────────────────────
+ghost threat samples CVE-2024-x   
+  → top 10 malware URLs           → forensics sandbox submit <url>
+  → sample hashes                 → forensics detonate <hash>
+                                  → forensics analyze <sample>
+                                  
+                                  Sandbox environments:
+                                  • Windows 10/11 (VM)
+                                  • Linux (Ubuntu/RHEL)
+                                  • macOS (VM)
+                                  • iOS (emulator)
+                                  • Android (emulator)
+                                  
+                                  Analysis output:
+                                  • Network IOCs (C2, DNS, beacons)
+                                  • File system changes
+                                  • Registry modifications (Windows)
+                                  • Process tree
+                                  • Memory artifacts
+                                  • YARA rule matches
+                                  • MITRE ATT&CK mapping
+```
+
+### Architecture (Future)
+```
+┌─────────────┐     MCP calls      ┌──────────────────┐
+│  GhostMCP   │ ──────────────────→ │  ForensicsMCP    │
+│  (recon)    │                     │  (analysis)      │
+│             │ ←────────────────── │                  │
+│  "find it"  │     results         │  "understand it" │
+└─────────────┘                     └──────────────────┘
+                                           │
+                                    ┌──────┴──────┐
+                                    │  Sandbox    │
+                                    │  Cluster    │
+                                    │             │
+                                    │ Win │ Lin   │
+                                    │ Mac │ iOS   │
+                                    │ Android     │
+                                    └─────────────┘
+```
+
+### ForensicsMCP Design Notes (for future development)
+- Separate container/VM with isolated network
+- Samples NEVER execute on the analysis host — always in disposable VMs
+- VM snapshots reset after each detonation
+- Network traffic captured (pcap) + analyzed
+- Results fed back to Unimind knowledge store (lessons learned)
+- Integration: GhostMCP discovers → ForensicsMCP analyzes → Unimind stores intelligence
+- MITRE ATT&CK auto-mapping from observed behaviors
+- Classification: all forensics data at level 3+ (sensitive)
