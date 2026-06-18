@@ -505,6 +505,119 @@ GET http://apilayer.net/api/validate?access_key={key}&number={phone}
 GET https://api.veriphone.io/v2/verify?phone={phone}&key={key}
 ```
 
+## 8. Breach Data as a People-Search Accelerator
+
+### 8.1 The Insight
+
+The ~15-20% of BeenVerified data that requires $5K+/mo data broker licensing (address history, employment, phone-to-name resolution, utility connections, social graphs) is substantially available through breach databases. Breach data from major incidents like Exactis (340M records), Apollo, PeopleDataLabs (1.2B), Facebook (533M), LinkedIn (700M), T-Mobile, AT&T, and Equifax collectively cover most of the PII that data brokers sell.
+
+**Estimated coverage via breach data:**
+
+| "Licensed" Data Type | Available in Breaches? | Key Breach Sources |
+|---|---|---|
+| **Address history** | Yes — extensively | Exactis (340M), Apollo, PeopleDataLabs (1.2B), loyalty programs, shipping DBs |
+| **Phone + carrier** | Yes | T-Mobile, AT&T breaches, SIM swap DBs, marketing databases |
+| **DMV / license data** | Partial — rare | State government breaches (sporadic, patchy coverage) |
+| **Credit headers** | Partial — legally radioactive | Equifax 2017 (147M), Experian breaches — stale data |
+| **Utility connections** | Yes | Billing system breaches, IoT vendor dumps |
+| **Employment history** | Yes | LinkedIn (700M), Apollo, corporate HR system breaches |
+| **Education** | Partial | University breaches, student loan servicer dumps |
+| **Relatives / associates** | Yes | Facebook (533M), contact list harvesting, social graph dumps |
+
+### 8.2 Breach Search API Landscape (2025-2026)
+
+Services with REST APIs for programmatic breach data access:
+
+| Service | Pricing | API | Search Fields | Notes |
+|---|---|---|---|---|
+| **DeHashed** | ~$0.02/query or subscription | REST API | Email, phone, username, IP, name, VIN, address, password hash | Most comprehensive field coverage. Industry standard. |
+| **Snusbase** | ~$27/mo | REST API (2048 req/day included) | Email, phone, username, IP, name | Cheap, API included with any paid plan. Good for low-volume research. |
+| **LeakCheck** | ~$10/mo | REST API | Email, phone, username | Budget-friendly. Smaller index than DeHashed. |
+| **IntelligenceX** | Free tier + paid | REST API | Email, phone, username, IP, domain, URL, hash, BTC, CIDR, IPFS | Broadest search types. Also indexes pastes, darknet, Tor. Free tier is rate-limited. |
+| **HIBP** | $3.50/mo (Core) | REST API | Email only (+ k-anonymity password check) | Metadata only — no raw PII returned. Legal gold standard. |
+| **LeakRadar** | €29.99/mo (Starter) | REST API (30 req/sec, unlimited search) | Email, domain, stealer logs | No per-query charge. Flat monthly fee. Modern DeHashed alternative (2025). |
+| **BreachSense** | Commercial (contact sales) | REST API | Email, domain, credentials, stealer logs, ransomware leaks | Continuous monitoring focus. Positioned as DeHashed replacement. |
+| **Intelligence Security** | Commercial | REST API + Telegram bot | Email, credentials, domain recon | 2026-era Snusbase alternative. Free audit tools available. |
+| **DataBreach.com** (Atlas Privacy) | Free search | No documented API | Email, name, address, phone, SSN, IP, username | Richest PII search but no programmatic access. Manual OSINT only. |
+
+### 8.3 Open Source / Self-Hosted Options
+
+No reputable project ships with pre-loaded breach data (legal reasons), but you can build your own:
+
+| Tool | Type | Notes |
+|---|---|---|
+| **Elasticsearch + custom ingest** | Self-hosted index | Load breach data you legally possess into ES, build API on top |
+| **Breach Checker (Passbae)** | Open source | Summarizes breached accounts by email, returns threat levels. Extensible. |
+| **SpiderFoot** | OSINT framework (OSS) | 200+ modules, orchestrates calls to third-party APIs. Self-hostable. Not a breach DB itself. |
+| **Recon-ng** | OSINT framework (OSS) | Module-based recon. Calls external APIs (you bring keys). Good for automation. |
+| **Maltego CE** | Graph OSINT (free edition) | Visual link analysis. Breach data via transforms (bring your own API keys). |
+| **Lampyre** | Desktop OSINT platform | Multiple data feeds, scripting support. No open breach API — uses integrations. |
+
+**Key insight from Perplexity:** None of SpiderFoot/Maltego/Recon-ng/Lampyre provide breach data directly — they're *orchestrators* that call APIs you configure. The breach data must come from a dedicated provider (DeHashed, Snusbase, etc.) or your own legal index.
+
+### 8.4 Additional Alternatives (Perplexity Findings, June 2026)
+
+**Email finding (Hunter.io alternatives):**
+- **Snov.io** — REST API, free tier, domain-to-email discovery
+- **Apollo.io** — Prospecting API, large database, free tier available
+- **RocketReach** — Email + phone finding, API access
+- **VoilaNorbert** — Email verification + finding, small free tier
+
+**Username enumeration (Sherlock alternatives):**
+- **Maigret** — More sites than Sherlock, actively maintained, Python
+- **WhatsMyName** — Community-maintained site list, can be used programmatically
+- **Namechk** — Web-based, some have unofficial API access
+
+**Court records (CourtListener alternatives):**
+- **PACER + RECAP** — Official federal courts. RECAP (via CourtListener/Free Law Project) archives PACER docs for free access
+- State-level court APIs vary wildly by jurisdiction
+- Commercial (LexisNexis, Westlaw) — expensive, heavily licensed, not suitable for OSINT tooling
+
+### 8.5 Two-Layer Legal Model for GhostMCP
+
+The legally clean approach for breach integration:
+
+**Layer 1 — Exposure Check (defensive, legal everywhere):**
+```
+"Has this identity been exposed in any breach?"
+→ Returns: breach names, dates, data types exposed, severity score
+→ Sources: HIBP, EmailRep.io, LeakCheck
+→ Config: breach_enrichment: metadata_only (DEFAULT)
+```
+
+**Layer 2 — Breach Content (authorized research only):**
+```
+"What specific data was exposed?"
+→ Returns: actual PII from breach records
+→ Sources: DeHashed, Snusbase, IntelligenceX
+→ Config: breach_enrichment: full
+→ Requires: operator acknowledgment of legal responsibility
+```
+
+### 8.6 Cost-Benefit Analysis with Breach APIs
+
+| Approach | Monthly Cost | Coverage vs BeenVerified |
+|---|---|---|
+| Free APIs only (HIBP free, EmailRep, NHTSA, phonenumbers) | $0 | ~40% |
+| + HIBP paid + Snusbase | ~$31/mo | ~65% |
+| + DeHashed or LeakRadar + Hunter.io | ~$80-130/mo | ~75% |
+| + IntelligenceX + multiple providers | ~$200-500/mo | ~85% |
+| Data broker licensing (Pipl, LexisNexis) | $5,000+/mo | ~95% |
+
+**Bottom line:** With ~$30-50/mo in breach search APIs (Snusbase + HIBP), GhostMCP closes roughly half the gap between the free tier and the $5K/mo data broker tier. The remaining gap is freshness (breach data is point-in-time snapshots, not live feeds) and DMV/credit data (hard legal walls).
+
+### 8.7 Three Real Problems with Breach-as-PeopleSearch
+
+1. **Freshness** — Breach data is a snapshot from the dump date. BeenVerified gets live feeds. A 2022 breach won't show someone's 2026 address.
+
+2. **Legal exposure** — Hard line between:
+   - Checking if an email *appears* in a breach (defensive, HIBP-style) → **Legal**
+   - *Using* breached PII for people-search enrichment → **Gray to illegal** depending on jurisdiction. CFAA, state privacy laws, GDPR all apply.
+
+3. **Programmatic access** — The aggregated breach databases (Snusbase, DeHashed, IntelX, LeakRadar) are paid services. No truly free, stable, abuse-tolerant breach search API exists for good reason.
+
+---
+
 ## Appendix C: IntelTechniques URL Templates
 
 Example URL patterns for the `ghost_people` URL generator:
