@@ -464,9 +464,10 @@ Examples:
             # interfere with JSON-RPC on stdout
             logging.getLogger("ghost_bridge").setLevel(logging.WARNING)
         main_proxy(config)
-    else:
-        # Bridge-only mode — standalone, no stdio proxy
-        bridge = GhostBridge(config)
+        return
+
+    # Bridge-only mode — standalone, no stdio proxy
+    bridge = GhostBridge(config)
 
     loop = asyncio.new_event_loop()
 
@@ -555,17 +556,24 @@ class MCPProxy:
             log.debug(f"Bridge task ended: {e}")
 
     async def _stdin_reader(self, ws):
-        """Read JSON-RPC from stdin and forward to GhostMCP via WebSocket."""
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+        """Read JSON-RPC from stdin and forward to GhostMCP via WebSocket.
+        
+        Uses a thread for stdin reading to support Windows (ProactorEventLoop
+        doesn't support connect_read_pipe on stdin).
+        """
+        loop = asyncio.get_event_loop()
 
         while self.running:
-            line = await reader.readline()
-            if not line:
+            try:
+                # Read line from stdin in a thread (works on Windows + Unix)
+                line_str = await loop.run_in_executor(None, sys.stdin.readline)
+            except (EOFError, OSError):
+                break
+
+            if not line_str:
                 break  # EOF
 
-            line_str = line.decode("utf-8").strip()
+            line_str = line_str.strip()
             if not line_str:
                 continue
 
