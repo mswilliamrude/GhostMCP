@@ -15,8 +15,85 @@ import re
 import sys
 import time
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# Local Connectivity Bridge — client registry and fetch helper
+# ---------------------------------------------------------------------------
+# Bridge clients connect via WebSocket and register localhost ports they
+# make available for testing. GhostMCP tools route localhost requests
+# through the bridge instead of trying to connect directly.
+
+_bridge_clients: dict[str, dict] = {}  # client_id -> {"ws": websocket, "ports": [8080, ...]}
+_bridge_pending: dict[str, asyncio.Future] = {}  # request_id -> Future waiting for response
+
+
+def _should_use_bridge(url: str) -> bool:
+    """Check if this URL should be routed through a local connectivity bridge."""
+    parsed = urlparse(url)
+    return parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
+
+
+def _find_bridge_for_port(port: int) -> Optional[str]:
+    """Find a bridge client that has the given port registered."""
+    for client_id, info in _bridge_clients.items():
+        if port in info.get("ports", []):
+            return client_id
+    return None
+
+
+async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None, body: str = None) -> dict:
+    """Route an HTTP request through a connected bridge client.
+    
+    Returns dict with 'status', 'headers', 'body' on success,
+    or 'error' on failure.
+    """
+    parsed = urlparse(url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    
+    client_id = _find_bridge_for_port(port)
+    if not client_id:
+        return {"error": f"No bridge client has port {port} registered. "
+                f"Run: python3 ghost_bridge.py --connect ws://<ghostmcp>/bridge --ports {port}"}
+    
+    bridge = _bridge_clients[client_id]
+    ws = bridge.get("ws")
+    if not ws:
+        return {"error": f"Bridge client '{client_id}' is disconnected"}
+    
+    # Generate unique request ID
+    import uuid
+    req_id = str(uuid.uuid4())[:8]
+    
+    # Create a future to wait for the response
+    future = asyncio.get_event_loop().create_future()
+    _bridge_pending[req_id] = future
+    
+    try:
+        # Send request to bridge
+        request_msg = json.dumps({
+            "type": "request",
+            "id": req_id,
+            "method": method,
+            "url": url,
+            "headers": headers or {},
+            "body": body,
+        })
+        await ws.send_text(request_msg)
+        
+        # Wait for response (timeout 30s)
+        result = await asyncio.wait_for(future, timeout=30.0)
+        return result
+        
+    except asyncio.TimeoutError:
+        return {"error": f"Bridge request timed out after 30s: {url}"}
+    except Exception as e:
+        return {"error": f"Bridge request failed: {e}"}
+    finally:
+        _bridge_pending.pop(req_id, None)
 
 from .engines.base import SearchResult, SearchEngineError
 from .engines.duckduckgo import DuckDuckGoEngine
@@ -384,6 +461,47 @@ async def ghost_fetch(
     paranoia: str = "cautious",
 ) -> str:
     """Fetch a URL and extract its content."""
+    
+    # Check if this should route through a local connectivity bridge
+    if _should_use_bridge(url):
+        bridge_resp = await _fetch_via_bridge(url)
+        if "error" in bridge_resp:
+            return f"Bridge error: {bridge_resp['error']}"
+        
+        # Use the bridge response as if we fetched directly
+        status = bridge_resp.get("status", 0)
+        resp_text = bridge_resp.get("body", "")
+        resp_headers = bridge_resp.get("headers", {})
+        
+        if status >= 400:
+            return f"HTTP Error: {status} for {url}"
+        
+        if extract == "html":
+            if len(resp_text) > 50000:
+                return resp_text[:50000] + "\n\n[... truncated at 50KB ...]"
+            return resp_text
+        
+        if extract == "headers":
+            lines = [f"{k}: {v}" for k, v in resp_headers.items()]
+            return "\n".join(lines)
+        
+        if extract == "links":
+            links = re.findall(r'href="(https?://[^"]+)"', resp_text)
+            unique_links = sorted(set(links))
+            if not unique_links:
+                return "No links found on page."
+            return "\n".join(unique_links)
+        
+        # Default: text extraction
+        text = re.sub(r"<script[^>]*>.*?</script>", "", resp_text, flags=re.DOTALL)
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > 20000:
+            text = text[:20000] + "\n\n[... truncated at 20KB ...]"
+        return f"Content from {url} (via bridge):\n\n{text}"
+    
+    # Direct fetch (no bridge needed)
     proxy = _get_proxy(paranoia)
     headers = get_headers(paranoia)
 
@@ -1015,12 +1133,40 @@ async def ghost_render(
     screenshot: bool = False,
 ) -> str:
     """Render a page with headless browser and capture console output."""
-    report = await render_page(
-        url=url,
-        wait_ms=wait,
-        execute_js=execute,
-        capture_screenshot=screenshot,
-    )
+    
+    # For localhost URLs with a bridge connected, fetch via bridge first
+    # then render the HTML content with Playwright locally
+    if _should_use_bridge(url):
+        bridge_resp = await _fetch_via_bridge(url)
+        if "error" in bridge_resp:
+            return f"Bridge error: {bridge_resp['error']}"
+        
+        # Got the HTML via bridge — now render it with Playwright
+        # using a data: URL so Playwright executes the JS locally
+        html_content = bridge_resp.get("body", "")
+        if not html_content:
+            return f"Bridge returned empty response for {url}"
+        
+        # Render the bridged HTML through Playwright
+        from .recon.render import render_page as _render
+        import base64
+        data_url = "data:text/html;base64," + base64.b64encode(html_content.encode()).decode()
+        report = await _render(
+            url=data_url,
+            wait_ms=wait,
+            execute_js=execute,
+            capture_screenshot=screenshot,
+        )
+        # Override the URL in the report for clarity
+        report.url = url
+        report.final_url = url + " (via bridge)"
+    else:
+        report = await render_page(
+            url=url,
+            wait_ms=wait,
+            execute_js=execute,
+            capture_screenshot=screenshot,
+        )
 
     if report.error:
         return f"Render error: {report.error}"
@@ -1184,12 +1330,72 @@ def main() -> None:
                 except Exception:
                     pass
 
+        # --- Local Connectivity Bridge ---
+        async def bridge_endpoint(websocket: WebSocket):
+            """Bridge WebSocket — dev machines connect here to register local ports."""
+            await websocket.accept()
+            client_id = None
+            
+            try:
+                # Wait for registration message
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+                msg = json.loads(raw)
+                
+                if msg.get("type") != "register":
+                    await websocket.send_text(json.dumps({"type": "error", "error": "Expected register message"}))
+                    return
+                
+                client_id = msg.get("client_id", f"bridge-{id(websocket)}")
+                ports = msg.get("ports", [])
+                
+                # Register this bridge client
+                _bridge_clients[client_id] = {"ws": websocket, "ports": ports}
+                print(f"[GhostMCP] Bridge connected: {client_id} ports={ports}")
+                
+                # Acknowledge
+                await websocket.send_text(json.dumps({
+                    "type": "registered",
+                    "client_id": client_id,
+                    "ports": ports,
+                }))
+                
+                # Handle responses from the bridge
+                while True:
+                    raw = await websocket.receive_text()
+                    msg = json.loads(raw)
+                    msg_type = msg.get("type", "")
+                    
+                    if msg_type in ("response", "error"):
+                        # Route response to the waiting future
+                        req_id = msg.get("id")
+                        if req_id and req_id in _bridge_pending:
+                            future = _bridge_pending.pop(req_id)
+                            if not future.done():
+                                future.set_result(msg)
+                    elif msg_type == "heartbeat":
+                        await websocket.send_text(json.dumps({"type": "heartbeat_ack"}))
+                        
+            except Exception as e:
+                print(f"[GhostMCP] Bridge disconnected: {client_id or 'unknown'} ({e})")
+            finally:
+                if client_id:
+                    _bridge_clients.pop(client_id, None)
+                    # Cancel any pending requests for this bridge
+                    for req_id, future in list(_bridge_pending.items()):
+                        if not future.done():
+                            future.set_result({"error": f"Bridge '{client_id}' disconnected"})
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
+
         # --- App with all routes ---
         app = Starlette(routes=[
             Route("/health", _health_handler, methods=["GET"]),
             Route("/sse", sse_endpoint, methods=["GET"]),
             Route("/mcp", mcp_post_endpoint, methods=["POST"]),
             WebSocketRoute("/ws", ws_endpoint),
+            WebSocketRoute("/bridge", bridge_endpoint),
         ])
 
         port = int(os.environ.get("GHOST_PORT", "8080"))
@@ -1197,6 +1403,7 @@ def main() -> None:
         print(f"[GhostMCP]   Health:    http://0.0.0.0:{port}/health")
         print(f"[GhostMCP]   SSE:       http://0.0.0.0:{port}/sse")
         print(f"[GhostMCP]   WebSocket: ws://0.0.0.0:{port}/ws")
+        print(f"[GhostMCP]   Bridge:    ws://0.0.0.0:{port}/bridge")
         print(f"[GhostMCP]   Tools:     {len(mcp._tools)}")
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     else:
