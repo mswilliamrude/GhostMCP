@@ -503,6 +503,38 @@ GET http://apilayer.net/api/validate?access_key={key}&number={phone}
 
 # Veriphone (1000 free req/mo)
 GET https://api.veriphone.io/v2/verify?phone={phone}&key={key}
+
+# Snusbase (paid, $27/mo — 2048 req/day)
+GET https://api.snusbase.com/data/search
+Content-Type: application/json
+Auth: {api-key}
+Body: {"terms": ["{email}"], "types": ["email"]}
+
+# DeHashed (paid, ~$15-30/mo)
+GET https://api.dehashed.com/search?query=email:{email}
+Authorization: Basic {base64(email:api-key)}
+
+# LeakCheck (paid, $10/mo)
+GET https://leakcheck.io/api/public?key={key}&check={email}&type=email
+
+# LeakRadar (paid, €29.99/mo — 30 req/sec)
+# API docs at https://leakradar.io/en/docs
+GET https://api.leakradar.io/v1/search?query={email}&type=email
+
+# IntelligenceX (free tier + paid)
+GET https://2.intelx.io/intelligent/search
+x-key: {api-key}
+Body: {"term": "{email}", "maxresults": 10}
+
+# OpenCNAM (15 free/mo, then $0.004/lookup)
+GET https://api.opencnam.com/v3/phone/{phone}?account_sid={sid}&auth_token={token}
+
+# Snov.io (50 credits/mo free)
+GET https://api.snov.io/v1/get-emails-from-url?api_key={key}&url=https://{domain}
+
+# Apollo.io (free tier)
+POST https://api.apollo.io/api/v1/people/match
+Body: {"email": "{email}", "api_key": "{key}"}
 ```
 
 ## 8. Breach Data as a People-Search Accelerator
