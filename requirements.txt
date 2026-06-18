@@ -4,3 +4,4 @@ cryptography>=41.0.0
 starlette>=0.37.0
 uvicorn>=0.29.0
 websockets>=12.0
+phonenumbers>=8.13.0

@@ -228,6 +228,14 @@ from .recon.render import render_page, RenderReport
 from .recon.subdomains import enumerate_subdomains, dns_brute_force, SubdomainReport
 from .recon.vulns import lookup_cve, search_cves, check_package, CVEResult, PackageVulnResult
 from .recon.threats import threat_lookup, ThreatReport
+from .recon.phone import PhoneReport, phone_lookup
+from .recon.vehicles import VehicleReport, vehicle_lookup
+from .recon.people import PeopleSearchResult, people_search
+from .recon.email_intel import EmailReport, email_lookup
+from .recon.username import UsernameReport, username_lookup
+from .recon.court import CourtSearchResult, CourtCase, court_search
+from .recon.breach import BreachSearchResult, BreachRecord, breach_search
+from .recon.report import BackgroundReport, generate_report
 from .utils.config import ParanoiaLevel
 
 
@@ -1327,11 +1335,566 @@ async def ghost_render(
 
 
 # ---------------------------------------------------------------------------
+# People Search tools — phone, email, username, VIN, court, breach, report
+# ---------------------------------------------------------------------------
+
+def _format_phone_report(r: PhoneReport) -> str:
+    """Format phone lookup result as readable text."""
+    if r.error:
+        return f"Phone lookup error: {r.error}"
+    lines = [f"=== Phone Intelligence: {r.number} ===", ""]
+    if r.formatted:
+        lines.append(f"E.164:         {r.formatted.get('e164', 'N/A')}")
+        lines.append(f"National:      {r.formatted.get('national', 'N/A')}")
+        lines.append(f"International: {r.formatted.get('international', 'N/A')}")
+    lines.append(f"Valid:         {r.valid}")
+    lines.append(f"Country:       {r.country} ({r.country_code})")
+    if r.region:
+        lines.append(f"Region:        {r.region}")
+    if r.timezone:
+        lines.append(f"Timezone:      {r.timezone}")
+    lines.append(f"Carrier Type:  {r.carrier_type}")
+    if r.carrier_name:
+        lines.append(f"Carrier:       {r.carrier_name}")
+    if r.cnam_name:
+        lines.append(f"\nCaller Name (CNAM): {r.cnam_name}")
+    if r.veriphone:
+        lines.append(f"\nVeriphone:     {r.veriphone}")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_phone",
+    description=(
+        "Look up a phone number: validate, format, identify carrier type/name, "
+        "timezone, and optionally resolve caller name via CNAM. Generates reverse-phone "
+        "search URLs for manual investigation."
+    ),
+    parameters={
+        "number": {"type": "string", "description": "Phone number in any format (e.g. +12145551234, (214) 555-1234)."},
+        "country": {"type": "string", "description": "Default country code for parsing (default: US).", "default": "US"},
+    },
+)
+async def ghost_phone(number: str, country: str = "US") -> str:
+    if not number:
+        return "Error: number is required."
+    report = await phone_lookup(number, country=country)
+    return _format_phone_report(report)
+
+
+def _format_vehicle_report(r: VehicleReport) -> str:
+    if r.error:
+        return f"Vehicle lookup error: {r.error}"
+    lines = [f"=== Vehicle Intelligence: {r.vin} ===", ""]
+    lines.append(f"Make:          {r.make}")
+    lines.append(f"Model:         {r.model}")
+    lines.append(f"Year:          {r.year}")
+    if r.trim:
+        lines.append(f"Trim:          {r.trim}")
+    if r.body_type:
+        lines.append(f"Body Type:     {r.body_type}")
+    if r.drive_type:
+        lines.append(f"Drive Type:    {r.drive_type}")
+    if r.transmission:
+        lines.append(f"Transmission:  {r.transmission}")
+    if r.engine:
+        eng = r.engine
+        lines.append(f"\nEngine:")
+        if eng.get("displacement"):
+            lines.append(f"  Displacement: {eng['displacement']}L")
+        if eng.get("cylinders"):
+            lines.append(f"  Cylinders:    {eng['cylinders']}")
+        if eng.get("fuel_type"):
+            lines.append(f"  Fuel Type:    {eng['fuel_type']}")
+    if r.manufacturer:
+        lines.append(f"\nManufacturer:  {r.manufacturer.get('name', 'N/A')}")
+        if r.manufacturer.get("country"):
+            lines.append(f"  Country:     {r.manufacturer['country']}")
+    if r.safety_features:
+        lines.append(f"\nSafety Features ({len(r.safety_features)}):")
+        for feat in r.safety_features[:10]:
+            lines.append(f"  - {feat}")
+        if len(r.safety_features) > 10:
+            lines.append(f"  ... and {len(r.safety_features) - 10} more")
+    if r.recalls:
+        lines.append(f"\nRecalls ({len(r.recalls)}):")
+        for rc in r.recalls[:5]:
+            lines.append(f"  Campaign: {rc.get('campaign_number', 'N/A')}")
+            lines.append(f"    Component: {rc.get('component', 'N/A')}")
+            lines.append(f"    Summary:   {rc.get('summary', 'N/A')[:120]}")
+            lines.append("")
+        if len(r.recalls) > 5:
+            lines.append(f"  ... and {len(r.recalls) - 5} more recalls")
+    else:
+        lines.append("\nRecalls: None found")
+    if r.complaint_count:
+        lines.append(f"\nConsumer Complaints: {r.complaint_count}")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_vin",
+    description=(
+        "Decode a Vehicle Identification Number (VIN). Returns make, model, year, "
+        "engine specs, safety features, manufacturer info, open recalls, and complaint "
+        "count. Uses free NHTSA government APIs (no key required)."
+    ),
+    parameters={
+        "vin": {"type": "string", "description": "Vehicle Identification Number (17 characters)."},
+    },
+)
+async def ghost_vin(vin: str) -> str:
+    if not vin:
+        return "Error: vin is required."
+    report = await vehicle_lookup(vin)
+    return _format_vehicle_report(report)
+
+
+def _format_people_report(r: PeopleSearchResult) -> str:
+    lines = [f"=== People Search URLs: {r.query_type} ===", ""]
+    lines.append(f"Input: {r.input_data}")
+    lines.append(f"Total URLs generated: {r.total_urls}")
+    lines.append("")
+    for category, urls in r.search_urls.items():
+        lines.append(f"--- {category} ---")
+        for entry in urls:
+            lines.append(f"  {entry.get('name', '?')}: {entry.get('url', '?')}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_people",
+    description=(
+        "Generate search URLs across 15+ people-search sites for a given name, phone, "
+        "email, address, or username. Uses the IntelTechniques URL-generator approach: "
+        "no scraping, no API calls — generates direct links for manual investigation. "
+        "Covers people-search sites, social media, court records, and property records."
+    ),
+    parameters={
+        "query_type": {
+            "type": "string",
+            "description": "Type of search: name, phone, email, address, username.",
+        },
+        "first": {"type": "string", "description": "First name (for name/address search)."},
+        "last": {"type": "string", "description": "Last name (for name search)."},
+        "phone": {"type": "string", "description": "Phone number (for phone search)."},
+        "email": {"type": "string", "description": "Email address (for email search)."},
+        "username": {"type": "string", "description": "Username (for username search)."},
+        "street": {"type": "string", "description": "Street address (for address search)."},
+        "city": {"type": "string", "description": "City (for name/address search)."},
+        "state": {"type": "string", "description": "State abbreviation (for name/address search)."},
+    },
+)
+async def ghost_people(
+    query_type: str,
+    first: str = "",
+    last: str = "",
+    phone: str = "",
+    email: str = "",
+    username: str = "",
+    street: str = "",
+    city: str = "",
+    state: str = "",
+) -> str:
+    if not query_type:
+        return "Error: query_type is required (name, phone, email, address, username)."
+    report = await people_search(
+        query_type=query_type,
+        first=first, last=last, phone=phone, email=email,
+        username=username, street=street, city=city, state=state,
+    )
+    return _format_people_report(report)
+
+
+def _format_email_report(r: EmailReport) -> str:
+    if r.error:
+        return f"Email lookup error: {r.error}"
+    lines = [f"=== Email Intelligence: {r.email} ===", ""]
+    lines.append(f"Domain:          {r.domain}")
+    lines.append(f"Free Provider:   {r.is_free_provider}")
+    if r.reputation:
+        rep = r.reputation
+        lines.append(f"\nReputation:")
+        lines.append(f"  Score:         {rep.get('reputation', 'N/A')}")
+        lines.append(f"  Suspicious:    {rep.get('suspicious', 'N/A')}")
+        if rep.get('details'):
+            details = rep['details']
+            if isinstance(details, dict):
+                for k, v in list(details.items())[:8]:
+                    lines.append(f"  {k}: {v}")
+    if r.breach_count is not None:
+        lines.append(f"\nBreach Exposure: {r.breach_count} breaches")
+        if r.breaches:
+            for b in r.breaches[:10]:
+                lines.append(f"  - {b}")
+            if len(r.breaches) > 10:
+                lines.append(f"  ... and {len(r.breaches) - 10} more")
+    if r.accounts_found:
+        lines.append(f"\nAccounts Found ({len(r.accounts_found)} sites):")
+        for a in r.accounts_found[:15]:
+            lines.append(f"  - {a}")
+        if len(r.accounts_found) > 15:
+            lines.append(f"  ... and {len(r.accounts_found) - 15} more")
+    if r.hunter_enrichment:
+        h = r.hunter_enrichment
+        lines.append(f"\nProfessional Enrichment (Hunter.io):")
+        if h.get("first_name"):
+            lines.append(f"  Name:     {h.get('first_name', '')} {h.get('last_name', '')}")
+        if h.get("position"):
+            lines.append(f"  Position: {h['position']}")
+        if h.get("company"):
+            lines.append(f"  Company:  {h['company']}")
+        if h.get("linkedin_url"):
+            lines.append(f"  LinkedIn: {h['linkedin_url']}")
+        if h.get("twitter"):
+            lines.append(f"  Twitter:  {h['twitter']}")
+    if r.errors:
+        lines.append(f"\nProvider Errors:")
+        for svc, err in r.errors.items():
+            lines.append(f"  {svc}: {err}")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_email",
+    description=(
+        "Investigate an email address: reputation scoring, breach exposure, account "
+        "discovery (which sites it's registered on), and professional enrichment "
+        "(name, company, title via Hunter.io). Generates OSINT search URLs."
+    ),
+    parameters={
+        "email": {"type": "string", "description": "Email address to investigate."},
+        "include_holehe": {
+            "type": "boolean",
+            "description": "Run Holehe account discovery — finds which sites the email is registered on. Slow (2-5 min). Default: true.",
+            "default": True,
+        },
+        "include_hunter": {
+            "type": "boolean",
+            "description": "Run Hunter.io professional enrichment (requires GHOST_HUNTER_KEY, costs 1 API credit). Only runs on non-free-provider domains. Default: false.",
+            "default": False,
+        },
+    },
+)
+async def ghost_email(
+    email: str,
+    include_holehe: bool = True,
+    include_hunter: bool = False,
+) -> str:
+    if not email:
+        return "Error: email is required."
+    report = await email_lookup(email, include_holehe=include_holehe, include_hunter=include_hunter)
+    return _format_email_report(report)
+
+
+def _format_username_report(r: UsernameReport) -> str:
+    if r.error:
+        return f"Username lookup error: {r.error}"
+    lines = [f"=== Username Enumeration: {r.username} ===", ""]
+    lines.append(f"Tool Used:      {r.tool_used}")
+    lines.append(f"Sites Checked:  {r.sites_checked}")
+    lines.append(f"Accounts Found: {len(r.accounts_found)}")
+    lines.append(f"Scan Time:      {r.scan_time_seconds:.1f}s")
+    if r.timed_out:
+        lines.append("WARNING: Scan timed out — results may be incomplete")
+    if r.accounts_found:
+        lines.append("")
+        # Group by category if available
+        by_cat: dict[str, list] = {}
+        for acct in r.accounts_found:
+            cat = acct.get("category", "other")
+            by_cat.setdefault(cat, []).append(acct)
+        for cat, accts in sorted(by_cat.items()):
+            lines.append(f"--- {cat} ({len(accts)}) ---")
+            for a in accts:
+                lines.append(f"  {a.get('site_name', '?')}: {a.get('url', '?')}")
+            lines.append("")
+    if r.search_urls:
+        lines.append("Search URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_username",
+    description=(
+        "Enumerate which platforms a username exists on. Uses Maigret (2500+ sites), "
+        "Sherlock (400+ sites), or a built-in checker (20 major platforms) as fallback. "
+        "Returns found accounts with URLs and categories."
+    ),
+    parameters={
+        "username": {"type": "string", "description": "Username to search for."},
+        "max_sites": {
+            "type": "integer",
+            "description": "Maximum sites to check (default 100, reduces scan time).",
+            "default": 100,
+        },
+        "timeout": {
+            "type": "integer",
+            "description": "Maximum scan time in seconds (default 120). Returns partial results on timeout.",
+            "default": 120,
+        },
+    },
+)
+async def ghost_username(
+    username: str,
+    max_sites: int = 100,
+    timeout: int = 120,
+) -> str:
+    if not username:
+        return "Error: username is required."
+    report = await username_lookup(username, max_sites=max_sites, timeout=timeout)
+    return _format_username_report(report)
+
+
+def _format_court_report(r: CourtSearchResult) -> str:
+    if r.error:
+        return f"Court search error: {r.error}"
+    lines = [f"=== Court Records: {r.query} ===", ""]
+    lines.append(f"Total Results: {r.total_results}")
+    if r.cases:
+        lines.append("")
+        for i, c in enumerate(r.cases[:10], 1):
+            lines.append(f"--- Case {i} ---")
+            lines.append(f"  Case Name:    {c.case_name}")
+            if c.docket_number:
+                lines.append(f"  Docket:       {c.docket_number}")
+            lines.append(f"  Court:        {c.court}")
+            if c.date_filed:
+                lines.append(f"  Filed:        {c.date_filed}")
+            if c.date_terminated:
+                lines.append(f"  Terminated:   {c.date_terminated}")
+            if c.nature_of_suit:
+                lines.append(f"  Nature:       {c.nature_of_suit}")
+            if c.parties:
+                lines.append(f"  Parties:      {', '.join(c.parties[:5])}")
+            if c.source_url:
+                lines.append(f"  URL:          {c.source_url}")
+            lines.append("")
+        if r.total_results > 10:
+            lines.append(f"... {r.total_results - 10} more results")
+    elif r.total_results == 0:
+        lines.append("\nNo cases found.")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_court",
+    description=(
+        "Search court records by party name or docket number. Uses CourtListener "
+        "REST API for federal court cases (requires free API token via "
+        "GHOST_COURTLISTENER_TOKEN). Falls back to search URL generation if no token."
+    ),
+    parameters={
+        "query": {"type": "string", "description": "Person name or docket number to search."},
+        "search_type": {
+            "type": "string",
+            "description": "Search type: party (search by name) or docket (search by docket number). Default: party.",
+            "default": "party",
+        },
+    },
+)
+async def ghost_court(query: str, search_type: str = "party") -> str:
+    if not query:
+        return "Error: query is required."
+    report = await court_search(query, search_type=search_type)
+    return _format_court_report(report)
+
+
+def _format_breach_report(r: BreachSearchResult) -> str:
+    if r.error:
+        return f"Breach search error: {r.error}"
+    lines = [f"=== Breach Search: {r.query} ({r.query_type}) ===", ""]
+    lines.append(f"Mode:            {r.mode}")
+    lines.append(f"Total Breaches:  {r.total_breaches}")
+    lines.append(f"Providers OK:    {', '.join(r.providers_checked) or 'none'}")
+    if r.providers_failed:
+        lines.append(f"Providers Failed: {', '.join(f'{k}: {v}' for k, v in r.providers_failed.items())}")
+    if r.records:
+        lines.append("")
+        # Group by severity
+        by_sev: dict[str, list] = {}
+        for rec in r.records:
+            by_sev.setdefault(rec.severity, []).append(rec)
+        for sev in ["critical", "high", "medium", "low"]:
+            recs = by_sev.get(sev, [])
+            if recs:
+                lines.append(f"--- {sev.upper()} ({len(recs)}) ---")
+                for rec in recs[:5]:
+                    lines.append(f"  {rec.breach_name} ({rec.source})")
+                    if rec.date:
+                        lines.append(f"    Date: {rec.date}")
+                    if rec.data_classes:
+                        lines.append(f"    Data: {', '.join(rec.data_classes[:6])}")
+                    if rec.record_count:
+                        lines.append(f"    Records: {rec.record_count:,}")
+                    if rec.details and r.mode == "full":
+                        lines.append(f"    Details: {rec.details}")
+                    lines.append("")
+                if len(recs) > 5:
+                    lines.append(f"  ... and {len(recs) - 5} more {sev} breaches")
+    elif r.total_breaches == 0:
+        lines.append("\nNo breaches found.")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_breach",
+    description=(
+        "Search breach databases for exposed credentials and PII. Two modes: "
+        "'metadata_only' (default, HIBP — which breaches, no PII) and 'full' "
+        "(Snusbase/DeHashed/LeakCheck — actual breach records). "
+        "Search by email, phone, username, name, or IP."
+    ),
+    parameters={
+        "query": {"type": "string", "description": "Search query (email, phone, username, name, or IP)."},
+        "query_type": {
+            "type": "string",
+            "description": "Query type: email, phone, username, name, ip. Default: email.",
+            "default": "email",
+        },
+        "mode": {
+            "type": "string",
+            "description": "Search mode: metadata_only (HIBP, safe/legal) or full (breach records with PII, requires API keys). Default: metadata_only.",
+            "default": "metadata_only",
+        },
+    },
+)
+async def ghost_breach(
+    query: str,
+    query_type: str = "email",
+    mode: str = "metadata_only",
+) -> str:
+    if not query:
+        return "Error: query is required."
+    report = await breach_search(query, query_type=query_type, mode=mode)
+    return _format_breach_report(report)
+
+
+def _format_background_report(r: BackgroundReport) -> str:
+    """The report module already generates markdown — just return it."""
+    return r.report_text
+
+
+@mcp.tool(
+    name="ghost_report",
+    description=(
+        "Generate a composite background report on a person by combining results "
+        "from phone, email, username, VIN, court, and breach searches. Provide the "
+        "subject's known identifiers and the tool will run all available searches "
+        "and cross-reference the results into a structured OSINT dossier."
+    ),
+    parameters={
+        "name": {"type": "string", "description": "Subject's full name (first last)."},
+        "email": {"type": "string", "description": "Subject's email address."},
+        "phone": {"type": "string", "description": "Subject's phone number."},
+        "username": {"type": "string", "description": "Subject's online username."},
+        "vin": {"type": "string", "description": "Subject's vehicle VIN."},
+        "city": {"type": "string", "description": "Subject's city."},
+        "state": {"type": "string", "description": "Subject's state."},
+    },
+)
+async def ghost_report(
+    name: str = "",
+    email: str = "",
+    phone: str = "",
+    username: str = "",
+    vin: str = "",
+    city: str = "",
+    state: str = "",
+) -> str:
+    if not any([name, email, phone, username, vin]):
+        return "Error: at least one identifier is required (name, email, phone, username, or vin)."
+
+    # Run all available searches in parallel
+    tasks = {}
+    if phone:
+        tasks["phone"] = phone_lookup(phone)
+    if email:
+        tasks["email"] = email_lookup(email, include_holehe=False, include_hunter=True)
+    if username:
+        tasks["username"] = username_lookup(username, max_sites=50, timeout=60)
+    if vin:
+        tasks["vin"] = vehicle_lookup(vin)
+    if name:
+        parts = name.strip().split(None, 1)
+        first = parts[0] if parts else ""
+        last = parts[1] if len(parts) > 1 else ""
+        tasks["court"] = court_search(name)
+        tasks["people"] = people_search(
+            query_type="name", first=first, last=last, city=city, state=state,
+        )
+    if email:
+        tasks["breach"] = breach_search(email, query_type="email", mode="metadata_only")
+
+    # Execute all tasks in parallel
+    results = {}
+    if tasks:
+        keys = list(tasks.keys())
+        completed = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        for k, v in zip(keys, completed):
+            if isinstance(v, Exception):
+                results[k] = None
+            else:
+                results[k] = v
+
+    # Build subject dict
+    subject = {}
+    if name:
+        subject["name"] = name
+    if email:
+        subject["email"] = email
+    if phone:
+        subject["phone"] = phone
+    if username:
+        subject["username"] = username
+    if city:
+        subject["city"] = city
+    if state:
+        subject["state"] = state
+
+    # Generate composite report
+    report = generate_report(
+        subject=subject,
+        phone_result=results.get("phone"),
+        email_result=results.get("email"),
+        username_result=results.get("username"),
+        vehicle_result=results.get("vin"),
+        court_result=results.get("court"),
+        breach_result=results.get("breach"),
+        people_urls=results.get("people"),
+    )
+    return _format_background_report(report)
+
+
+# ---------------------------------------------------------------------------
 # HTTP health endpoint + entry point
 # ---------------------------------------------------------------------------
 
 _start_time = time.time()
-GHOST_VERSION = "0.3.5"
+GHOST_VERSION = "0.4.0"
 
 
 async def _health_handler(request):
