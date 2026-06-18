@@ -508,14 +508,20 @@ class MCPProxy:
     async def start(self):
         """Connect to GhostMCP and start proxying stdio ↔ WebSocket."""
         self.running = True
+        self._stdin_buffer: list[str] = []
+        self._ws_connected = asyncio.Event()
+
+        # Start stdin reader immediately — don't wait for WS connection
+        stdin_task = asyncio.create_task(self._stdin_loop())
 
         # Connect WebSocket to GhostMCP
         backoff = 5
         while self.running:
             try:
                 log.info(f"Connecting to {self.config.server_url}...")
+                ws_url = self.config.server_url.replace("/bridge", "/ws")
                 async with websockets.connect(
-                    self.config.server_url.replace("/bridge", "/ws"),
+                    ws_url,
                     additional_headers={"X-Client-ID": self.config.client_id},
                     ping_interval=20,
                     ping_timeout=10,
@@ -523,24 +529,30 @@ class MCPProxy:
                 ) as mcp_ws:
                     self.ws = mcp_ws
                     backoff = 5
+                    self._ws_connected.set()
+
+                    # Flush any buffered stdin messages
+                    for msg in self._stdin_buffer:
+                        await mcp_ws.send(msg)
+                    self._stdin_buffer.clear()
 
                     # Also connect bridge channel if ports/web_access configured
                     bridge_task = None
                     if self.config.ports or self.config.allow_web_access:
                         bridge_task = asyncio.create_task(self._run_bridge())
 
-                    # Run stdin reader + ws reader concurrently
-                    await asyncio.gather(
-                        self._stdin_reader(mcp_ws),
-                        self._ws_reader(mcp_ws),
-                    )
+                    # Run ws reader (stdin reader already running)
+                    await self._ws_reader(mcp_ws)
 
             except websockets.ConnectionClosed as e:
                 log.warning(f"MCP connection closed: {e}")
+                self._ws_connected.clear()
             except ConnectionRefusedError:
                 log.warning(f"Connection refused: {self.config.server_url}")
+                self._ws_connected.clear()
             except Exception as e:
                 log.error(f"Connection error: {type(e).__name__}: {e}")
+                self._ws_connected.clear()
 
             if not self.running:
                 break
@@ -549,6 +561,8 @@ class MCPProxy:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
+        stdin_task.cancel()
+
     async def _run_bridge(self):
         """Run the bridge connection in parallel with MCP proxy."""
         try:
@@ -556,45 +570,35 @@ class MCPProxy:
         except Exception as e:
             log.debug(f"Bridge task ended: {e}")
 
-    async def _stdin_reader(self, ws):
-        """Read JSON-RPC from stdin and forward to GhostMCP via WebSocket.
-        
-        Uses a thread for stdin reading to support Windows (ProactorEventLoop
-        doesn't support connect_read_pipe on stdin).
-        """
+    async def _stdin_loop(self):
+        """Read JSON-RPC from stdin continuously. Buffers until WS connects."""
         loop = asyncio.get_event_loop()
 
         while self.running:
             try:
-                # Read line from stdin in a thread (works on Windows + Unix)
                 line_str = await loop.run_in_executor(None, sys.stdin.readline)
             except (EOFError, OSError):
                 break
 
             if not line_str:
-                break  # EOF
+                break  # EOF — opencode closed
 
             line_str = line_str.strip()
             if not line_str:
                 continue
 
-            # Forward to GhostMCP
-            try:
-                await ws.send(line_str)
-            except Exception as e:
-                # Connection lost — write error response
+            # If WS is connected, forward immediately
+            if self.ws and self._ws_connected.is_set():
                 try:
-                    msg = json.loads(line_str)
-                    error_resp = json.dumps({
-                        "jsonrpc": "2.0",
-                        "id": msg.get("id"),
-                        "error": {"code": -32000, "message": f"GhostMCP connection lost: {e}"}
-                    })
-                    sys.stdout.write(error_resp + "\n")
-                    sys.stdout.flush()
-                except Exception:
-                    pass
-                break
+                    await self.ws.send(line_str)
+                except Exception as e:
+                    # Connection lost — buffer for reconnect
+                    self._stdin_buffer.append(line_str)
+                    log.debug(f"WS send failed, buffered: {e}")
+            else:
+                # Buffer until connected
+                self._stdin_buffer.append(line_str)
+                log.debug(f"Buffered stdin (WS not connected): {line_str[:50]}...")
 
     async def _ws_reader(self, ws):
         """Read responses from GhostMCP WebSocket and write to stdout."""
