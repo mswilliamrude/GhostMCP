@@ -24,17 +24,29 @@ import httpx
 # Local Connectivity Bridge — client registry and fetch helper
 # ---------------------------------------------------------------------------
 # Bridge clients connect via WebSocket and register localhost ports they
-# make available for testing. GhostMCP tools route localhost requests
-# through the bridge instead of trying to connect directly.
+# make available for testing. Optionally provide internet connectivity
+# for GhostMCP in private VNets without egress.
 
-_bridge_clients: dict[str, dict] = {}  # client_id -> {"ws": websocket, "ports": [8080, ...]}
+_bridge_clients: dict[str, dict] = {}  # client_id -> {"ws", "ports", "web_access", "web_mode", "locality"}
 _bridge_pending: dict[str, asyncio.Future] = {}  # request_id -> Future waiting for response
+_shared_pool: list[str] = []  # client_ids with web_access_mode: shared
+_pool_index: int = 0  # round-robin counter
 
 
 def _should_use_bridge(url: str) -> bool:
     """Check if this URL should be routed through a local connectivity bridge."""
     parsed = urlparse(url)
     return parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
+
+
+def _should_use_web_bridge(url: str) -> bool:
+    """Check if this URL should route through a bridge for internet access."""
+    if not _bridge_clients:
+        return False
+    # If any bridge offers web access AND this is an external URL
+    if _should_use_bridge(url):
+        return False  # localhost goes through port-specific bridge
+    return any(b.get("web_access") for b in _bridge_clients.values())
 
 
 def _find_bridge_for_port(port: int) -> Optional[str]:
@@ -45,35 +57,99 @@ def _find_bridge_for_port(port: int) -> Optional[str]:
     return None
 
 
-async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None, body: str = None) -> dict:
+def _find_bridge_for_web(requesting_client: str = "") -> Optional[str]:
+    """Find a bridge to route web requests through.
+    
+    Priority:
+    1. Requesting client's own bridge (if self_only or shared)
+    2. Round-robin from shared pool
+    3. None (use direct connection)
+    """
+    global _pool_index
+
+    # Check if the requesting client has their own bridge with web access
+    if requesting_client and requesting_client in _bridge_clients:
+        info = _bridge_clients[requesting_client]
+        if info.get("web_access") and info.get("web_mode") in ("self_only", "shared"):
+            return requesting_client
+
+    # Round-robin from shared pool
+    if _shared_pool:
+        # Clean out disconnected bridges
+        active = [c for c in _shared_pool if c in _bridge_clients]
+        if active != _shared_pool:
+            _shared_pool[:] = active
+
+        if _shared_pool:
+            _pool_index = _pool_index % len(_shared_pool)
+            client_id = _shared_pool[_pool_index]
+            _pool_index += 1
+            return client_id
+
+    return None
+
+
+def _register_bridge(client_id: str, info: dict):
+    """Register a bridge client and update the shared pool."""
+    _bridge_clients[client_id] = info
+
+    # Update shared pool
+    if info.get("web_access") and info.get("web_mode") == "shared":
+        if client_id not in _shared_pool:
+            _shared_pool.append(client_id)
+    else:
+        if client_id in _shared_pool:
+            _shared_pool.remove(client_id)
+
+
+def _unregister_bridge(client_id: str):
+    """Remove a bridge client and clean up."""
+    _bridge_clients.pop(client_id, None)
+    if client_id in _shared_pool:
+        _shared_pool.remove(client_id)
+    # Cancel pending requests
+    for req_id, future in list(_bridge_pending.items()):
+        if not future.done():
+            future.set_result({"error": f"Bridge '{client_id}' disconnected"})
+
+
+async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
+                            body: str = None, requesting_client: str = "") -> dict:
     """Route an HTTP request through a connected bridge client.
     
     Returns dict with 'status', 'headers', 'body' on success,
-    or 'error' on failure.
+    or 'error' on failure. Includes 'bridge_client' and 'bridge_locality' for provenance.
     """
     parsed = urlparse(url)
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    
-    client_id = _find_bridge_for_port(port)
-    if not client_id:
-        return {"error": f"No bridge client has port {port} registered. "
-                f"Run: python3 ghost_bridge.py --connect ws://<ghostmcp>/bridge --ports {port}"}
-    
-    bridge = _bridge_clients[client_id]
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
+
+    if is_localhost:
+        port = parsed.port or 80
+        client_id = _find_bridge_for_port(port)
+        if not client_id:
+            return {"error": f"No bridge client has port {port} registered. "
+                    f"Run: python3 ghost_bridge.py --connect ws://<ghostmcp>/bridge --ports {port}"}
+    else:
+        client_id = _find_bridge_for_web(requesting_client)
+        if not client_id:
+            return {"error": "No bridge with web access available. "
+                    "Set allow_web_access: true in your bridge config."}
+
+    bridge = _bridge_clients.get(client_id)
+    if not bridge:
+        return {"error": f"Bridge '{client_id}' not found"}
+
     ws = bridge.get("ws")
     if not ws:
-        return {"error": f"Bridge client '{client_id}' is disconnected"}
-    
-    # Generate unique request ID
+        return {"error": f"Bridge '{client_id}' is disconnected"}
+
     import uuid
     req_id = str(uuid.uuid4())[:8]
-    
-    # Create a future to wait for the response
+
     future = asyncio.get_event_loop().create_future()
     _bridge_pending[req_id] = future
-    
+
     try:
-        # Send request to bridge
         request_msg = json.dumps({
             "type": "request",
             "id": req_id,
@@ -83,11 +159,15 @@ async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
             "body": body,
         })
         await ws.send_text(request_msg)
-        
-        # Wait for response (timeout 30s)
+
         result = await asyncio.wait_for(future, timeout=30.0)
+
+        # Tag with provenance
+        result["bridge_client"] = client_id
+        result["bridge_locality"] = bridge.get("locality", {}).get("region", "unknown")
+
         return result
-        
+
     except asyncio.TimeoutError:
         return {"error": f"Bridge request timed out after 30s: {url}"}
     except Exception as e:
@@ -1347,10 +1427,22 @@ def main() -> None:
                 
                 client_id = msg.get("client_id", f"bridge-{id(websocket)}")
                 ports = msg.get("ports", [])
+                web_access = msg.get("allow_web_access", False)
+                web_mode = msg.get("web_access_mode", "false")
+                locality = msg.get("locality", {})
                 
                 # Register this bridge client
-                _bridge_clients[client_id] = {"ws": websocket, "ports": ports}
-                print(f"[GhostMCP] Bridge connected: {client_id} ports={ports}")
+                _register_bridge(client_id, {
+                    "ws": websocket,
+                    "ports": ports,
+                    "web_access": web_access,
+                    "web_mode": web_mode,
+                    "locality": locality,
+                })
+                
+                locality_str = f", locality={locality.get('region', '?')}" if locality else ""
+                web_str = f", web={web_mode}" if web_access else ""
+                print(f"[GhostMCP] Bridge connected: {client_id} ports={ports}{web_str}{locality_str}")
                 
                 # Acknowledge
                 await websocket.send_text(json.dumps({
@@ -1359,19 +1451,37 @@ def main() -> None:
                     "ports": ports,
                 }))
                 
-                # Handle responses from the bridge
+                # Handle responses and re-registrations from the bridge
                 while True:
                     raw = await websocket.receive_text()
                     msg = json.loads(raw)
                     msg_type = msg.get("type", "")
                     
                     if msg_type in ("response", "error"):
-                        # Route response to the waiting future
                         req_id = msg.get("id")
                         if req_id and req_id in _bridge_pending:
                             future = _bridge_pending.pop(req_id)
                             if not future.done():
                                 future.set_result(msg)
+                    elif msg_type == "register":
+                        # Re-registration (config file changed)
+                        ports = msg.get("ports", [])
+                        web_access = msg.get("allow_web_access", False)
+                        web_mode = msg.get("web_access_mode", "false")
+                        locality = msg.get("locality", {})
+                        _register_bridge(client_id, {
+                            "ws": websocket,
+                            "ports": ports,
+                            "web_access": web_access,
+                            "web_mode": web_mode,
+                            "locality": locality,
+                        })
+                        print(f"[GhostMCP] Bridge re-registered: {client_id} ports={ports}")
+                        await websocket.send_text(json.dumps({
+                            "type": "registered",
+                            "client_id": client_id,
+                            "ports": ports,
+                        }))
                     elif msg_type == "heartbeat":
                         await websocket.send_text(json.dumps({"type": "heartbeat_ack"}))
                         
@@ -1379,11 +1489,7 @@ def main() -> None:
                 print(f"[GhostMCP] Bridge disconnected: {client_id or 'unknown'} ({e})")
             finally:
                 if client_id:
-                    _bridge_clients.pop(client_id, None)
-                    # Cancel any pending requests for this bridge
-                    for req_id, future in list(_bridge_pending.items()):
-                        if not future.done():
-                            future.set_result({"error": f"Bridge '{client_id}' disconnected"})
+                    _unregister_bridge(client_id)
                 try:
                     await websocket.close()
                 except Exception:
