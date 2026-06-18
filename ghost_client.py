@@ -609,7 +609,7 @@ class MCPProxy:
     async def shutdown(self):
         """Graceful shutdown."""
         self.running = False
-        await self.bridge.shutdown()
+        self.bridge.running = False
         if self.ws:
             try:
                 await self.ws.close()
@@ -632,8 +632,17 @@ def main_proxy(config: BridgeConfig):
     try:
         loop.run_until_complete(proxy.start())
     except KeyboardInterrupt:
-        loop.run_until_complete(proxy.shutdown())
+        try:
+            loop.run_until_complete(proxy.shutdown())
+        except Exception:
+            pass
     finally:
+        # Cancel all remaining tasks silently
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        # Suppress "Task was destroyed" warnings
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
 
 
