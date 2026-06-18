@@ -545,6 +545,64 @@ Coverage %
 
 **The steepest value curve is $0→$31.** After $450/mo, you're paying exponentially more for marginal gains. The $31→$90 jump is the second-best value, primarily because Hunter.io unlocks the email→professional-identity pipeline that makes name searches actually useful.
 
+---
+
+## API Rate Limits & Monthly Quotas by Provider
+
+Reference table for capacity planning. How many searches can you run before hitting walls?
+
+### Paid Providers
+
+| Provider | Plan | Monthly Requests | Daily Cap | Per-Second | Cost/Query | Notes |
+|---|---|---|---|---|---|---|
+| **HIBP Core** | $3.50/mo | ~432,000/mo | ~14,400/day | 10/min (0.17/sec) | ~$0.000008 | Rate-limited, not volume-limited. Stay under 10/min and run all month. |
+| **HIBP Pro** | $10/mo | ~432,000/mo | ~14,400/day | 10/min | ~$0.000023 | Same rate as Core. Adds k-anonymity email search, domain search, stealer logs. |
+| **Snusbase** | $27/mo | ~61,440/mo | 2,048/day | ~1-2/sec (est.) | ~$0.0004 | Hard cap: 2,048 API req/day. Resets daily. API included with any paid plan. |
+| **LeakCheck** | $10/mo | Varies | ~100-1000/day (est.) | Not published | ~$0.01-0.10 | Less transparent on limits. Smaller index than Snusbase. |
+| **LeakRadar** | €29.99/mo | **Unlimited** searches | Unlimited | **30/sec** | €0 per search | Best rate limit of any breach provider. Quota on "cleartext unlocks" not searches. |
+| **DeHashed** | $15-30/mo | Varies by plan | Varies | Not published | ~$0.02/query (est.) | Freemium monitoring; API on paid plans. Broadest field coverage (VIN, address, hash). |
+| **IntelligenceX** | $100-400/mo | Varies by plan | Varies | Not published | Varies | Free tier is heavily rate-limited. Paid plans unlock Tor/darknet/paste indexing. |
+| **Hunter.io Starter** | $49/mo | **500 searches**/mo | ~17/day | Not rate-limited | $0.098/search | Hard cap at 500. Each domain lookup, email finder, or verification = 1 search. 1,000 verifications included separately. **Bottleneck — be selective.** |
+| **Snov.io Starter** | $39/mo | 1,000 credits/mo | ~33/day | Not published | $0.039/credit | 1 credit = 1 email found. More generous than Hunter for email finding. |
+| **Apollo.io Free** | $0 | 300 emails/mo | ~10/day | Not published | $0 | Free: 300 email, 60 mobile credits. Paid ($49/mo): 2,400 email, 120 mobile. |
+| **RocketReach** | $53/mo | 170 lookups/mo | ~6/day | Not published | $0.31/lookup | Smallest quota but highest data quality for professional emails. |
+| **Twilio CNAM** | Pay-per-use | **Unlimited** | Unlimited | ~25/sec | **$0.06/lookup** | No monthly cap — pure pay-per-use. $50 budget = 833 lookups. $10 = 166. |
+| **OpenCNAM** | Free (15) + pay | 15 free/mo, then unlimited | Unlimited | Not published | $0.004/lookup | 15x cheaper per-lookup than Twilio but less data returned. |
+| **PACER** | Pay-per-page | **Unlimited** | Unlimited | N/A (web) | **$0.10/page** ($3 max/doc) | $20/mo budget = 200 pages or ~60-70 documents. |
+| **BreachSense** | Contact sales | Unknown | Unknown | Unknown | Unknown | Enterprise/sales-driven pricing. Continuous monitoring focus. |
+| **Intelligence Security** | Contact sales | Unknown | Unknown | Unknown | Unknown | Snusbase competitor. Has free audit tools but API pricing opaque. |
+
+### Free Providers
+
+| Provider | Monthly Requests | Daily Cap | Speed | Notes |
+|---|---|---|---|---|
+| `phonenumbers` | **Unlimited** (offline) | N/A | Instant | Local library — no network calls, no rate limits. |
+| Veriphone | 1,000/mo | ~33/day | Fast | Resets monthly. Good free tier. |
+| NumVerify | 100/mo (HTTP only) | ~3/day | Fast | Free tier is HTTP only (no HTTPS!). Very limited. |
+| EmailRep.io | ~1,500/mo (est. 50/day) | ~50/day | Fast | Undocumented limit but stable. Free with API key registration. |
+| Holehe | **Unlimited** (but slow) | N/A | **2-5 min/scan** | Checks 120+ sites per email. Each site = 1 HTTP request. Slow by nature. |
+| Sherlock | **Unlimited** (but slow) | N/A | **2-5 min/scan** | Checks 400+ sites per username. Same slowness issue. |
+| Maigret | **Unlimited** (but slow) | N/A | **3-8 min/scan** | Checks 2500+ sites. Slowest but most comprehensive. |
+| WhatsMyName | **Unlimited** | N/A | ~1-2 min | ~500 sites. Faster than Maigret, fewer sites. |
+| NHTSA vPIC | **Unlimited** (throttled) | N/A | Fast | Government API. No hard cap, automated traffic management. Batch: 50 VINs/req. |
+| NHTSA Recalls | **Unlimited** (throttled) | N/A | Fast | Same as vPIC. |
+| CourtListener | 3,750/mo | 125/day (50/hr, 5/min) | Fast | Free tier. Membership gets higher limits. |
+
+### Practical Capacity at Each Tier
+
+For a typical investigator running ~20-30 searches/day:
+
+| Tier | Limiting Provider | 20 searches/day | Monthly Headroom | Bottleneck? |
+|---|---|---|---|---|
+| **Free ($0)** | CourtListener (125/day) | 20/day = 16% of cap | 84% headroom | No — all free providers can handle 20/day easily |
+| **Budget ($31)** | Snusbase (2,048/day) | 20/day = 1% of cap | 99% headroom | No — Snusbase is generous |
+| **Pro ($90)** | Hunter.io (500/mo total) | 20/day burns it in **25 days** | **Runs out day 25** | **YES — Hunter.io is the bottleneck.** Must be selective about which queries trigger enrichment. |
+| **Full ($450)** | Same Hunter.io bottleneck | Same | Same | Smart routing needed: only call Hunter on high-confidence business emails |
+
+**Mitigation for Hunter.io bottleneck:** The `ghost_email` tool should only trigger Hunter enrichment when (a) the email domain is a company domain (not gmail/yahoo/hotmail), and (b) no breach data already provides the person's identity. This conserves the 500/mo quota for cases where it adds value.
+
+---
+
 1. **The $0 → $31/mo jump is the biggest value inflection point.** Adding HIBP + Snusbase unlocks breach-sourced PII that would otherwise cost $5K+/mo through data brokers. This takes coverage from 45% to 65%.
 
 2. **Breach data is the great equalizer.** Most of the "licensed" data that separates BeenVerified from free OSINT tools (address history, employment, phone associations) is available through breach databases for a fraction of the cost.
