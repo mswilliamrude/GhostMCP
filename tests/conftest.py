@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -11,12 +12,68 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# pytest-asyncio config
+# pytest-asyncio config + custom markers
 # ---------------------------------------------------------------------------
 
 def pytest_configure(config):
     """Set asyncio_mode to auto for all async tests."""
     config.addinivalue_line("markers", "asyncio: mark test as async")
+    config.addinivalue_line(
+        "markers",
+        "integration: mark test as integration (requires live API keys, "
+        "run with: pytest -m integration)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "paid: mark test as requiring a paid API key "
+        "(run with: pytest -m paid)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip integration and paid tests unless explicitly requested.
+
+    Usage:
+        pytest                          # runs only unit tests (default)
+        pytest -m integration           # runs only integration tests
+        pytest -m paid                  # runs only paid API tests
+        pytest -m "integration or paid" # runs both
+        pytest -m ""                    # runs everything
+    """
+    run_integration = False
+    run_paid = False
+
+    # Check if the user explicitly requested these markers
+    markexpr = config.getoption("-m", default="")
+    if "integration" in markexpr:
+        run_integration = True
+    if "paid" in markexpr:
+        run_paid = True
+
+    skip_integration = pytest.mark.skip(
+        reason="Integration test — run with: pytest -m integration"
+    )
+    skip_paid = pytest.mark.skip(
+        reason="Paid API test — run with: pytest -m paid"
+    )
+
+    for item in items:
+        if "integration" in item.keywords and not run_integration:
+            item.add_marker(skip_integration)
+        if "paid" in item.keywords and not run_paid:
+            item.add_marker(skip_paid)
+
+
+# ---------------------------------------------------------------------------
+# Integration test helpers
+# ---------------------------------------------------------------------------
+
+def require_env(var_name: str) -> str:
+    """Get an env var or skip the test if not set."""
+    val = os.environ.get(var_name, "")
+    if not val:
+        pytest.skip(f"{var_name} not set")
+    return val
 
 
 # ---------------------------------------------------------------------------
