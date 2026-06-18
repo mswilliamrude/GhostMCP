@@ -302,9 +302,9 @@ class GhostBridge:
             log.warning(f"[{req_id}] Blocked web request (allow_web_access=false): {url}")
             return
 
-        if not is_localhost:
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
-            if is_localhost and port not in self.config.ports:
+        if is_localhost:
+            port = parsed.port or 80
+            if port not in self.config.ports:
                 response = {
                     "type": "error",
                     "id": req_id,
