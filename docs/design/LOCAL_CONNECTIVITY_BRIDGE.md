@@ -24,7 +24,7 @@ developer's laptop behind NAT/VPN.
 
 ## 2. Proposed Solution: Local Connectivity Bridge
 
-A lightweight Python script (`ghost_bridge.py`) that runs on the developer's machine,
+A lightweight Python script (`ghost_client.py`) that runs on the developer's machine,
 connects outbound to GhostMCP via WebSocket, and provides GhostMCP tools with
 access to local services for webapp testing.
 
@@ -54,7 +54,7 @@ running on the developer's machine.
 │                    Developer Machine                         │
 │                                                             │
 │  ┌──────────────┐     ┌──────────────────────────────────┐  │
-│  │  Vue/React    │     │        ghost_bridge.py            │  │
+│  │  Vue/React    │     │        ghost_client.py            │  │
 │  │  Dev Server   │     │                                  │  │
 │  │  :8080        │◄────│  1. Connects WS to GhostMCP      │  │
 │  └──────────────┘     │  2. Receives test requests        │  │
@@ -87,7 +87,7 @@ running on the developer's machine.
 
 ```
 1. Developer starts the bridge:
-   $ python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000
+   $ python3 ghost_client.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000
 
 2. Bridge connects to GhostMCP via WebSocket:
    → WS CONNECT ws://10.0.10.7:8080/bridge
@@ -193,16 +193,16 @@ apps that make additional API calls during rendering.
 
 ```bash
 # Connect to local GhostMCP container
-python3 ghost_bridge.py --connect ws://localhost:8080/bridge --ports 8080,3000
+python3 ghost_client.py --connect ws://localhost:8080/bridge --ports 8080,3000
 
 # Connect to ACI-deployed GhostMCP
-python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000,5173
+python3 ghost_client.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000,5173
 
 # With auto-discovery (scan for listening ports)
-python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --auto-discover
+python3 ghost_client.py --connect ws://10.0.10.7:8080/bridge --auto-discover
 
 # With authentication
-python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --ports 8080 --token <jwt>
+python3 ghost_client.py --connect ws://10.0.10.7:8080/bridge --ports 8080 --token <jwt>
 ```
 
 ### MCP Client Configuration (opencode.json)
@@ -210,7 +210,7 @@ python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --ports 8080 --toke
 ```json
 {
   "plugin": [
-    "/path/to/ghost_bridge_plugin.ts"
+    "/path/to/ghost_client_plugin.ts"
   ]
 }
 ```
@@ -251,7 +251,7 @@ Bridge runs independently — not part of the MCP config. It's a sidecar process
 
 | Component | File | Lines (est.) | Description |
 |-----------|------|-------------|-------------|
-| Bridge client | `ghost_bridge.py` | ~150 | WebSocket client, port registration, HTTP fetch, response relay |
+| Bridge client | `ghost_client.py` | ~150 | WebSocket client, port registration, HTTP fetch, response relay |
 | Bridge server endpoint | `src/mcp.py` | ~80 | `/bridge` WebSocket route, client registry, request routing |
 | Tool integration | `src/mcp.py` | ~50 | `_should_use_bridge()` check in `ghost_fetch` and `ghost_render` |
 | **Total** | | **~280 lines** | |

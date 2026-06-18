@@ -22,7 +22,7 @@ Replace CLI `--ports` with a YAML config file that the bridge monitors for chang
 Developers can add/remove ports without restarting the bridge or exiting their IDE.
 
 ```yaml
-# ~/.ghost_bridge.yaml
+# ~/.ghost_client.yaml
 server: ws://10.0.10.7:8080/bridge
 client_id: will-laptop
 
@@ -153,11 +153,11 @@ Search results tagged:
 
 ## 3. Architecture
 
-### Bridge Client (ghost_bridge.py)
+### Bridge Client (ghost_client.py)
 
 ```
 ┌──────────────────────────────────────────────┐
-│              ghost_bridge.py                  │
+│              ghost_client.py                  │
 │                                              │
 │  ┌────────────────┐  ┌───────────────────┐  │
 │  │  Config Watcher │  │  WebSocket Client │  │
@@ -231,16 +231,16 @@ Search results tagged:
 
 | Component | Change |
 |-----------|--------|
-| `ghost_bridge.py` | Add YAML config loading, `stat()` poll loop, re-registration on change |
-| `ghost_bridge.py` | Support `--config` flag (default `~/.ghost_bridge.yaml`) |
-| `ghost_bridge.py` | Keep `--ports` and `--connect` as CLI overrides for quick use |
+| `ghost_client.py` | Add YAML config loading, `stat()` poll loop, re-registration on change |
+| `ghost_client.py` | Support `--config` flag (default `~/.ghost_client.yaml`) |
+| `ghost_client.py` | Keep `--ports` and `--connect` as CLI overrides for quick use |
 
 ### Phase 2: Web Access Routing (~60 lines)
 
 | Component | Change |
 |-----------|--------|
-| `ghost_bridge.py` | Handle web requests (non-localhost) when `allow_web_access: true` |
-| `ghost_bridge.py` | Send `allow_web_access` and `web_access_mode` in registration |
+| `ghost_client.py` | Handle web requests (non-localhost) when `allow_web_access: true` |
+| `ghost_client.py` | Send `allow_web_access` and `web_access_mode` in registration |
 | `src/mcp.py` | Store web access capability in bridge registry |
 | `src/mcp.py` | Route search engine HTTP calls through bridge when no egress |
 
@@ -257,7 +257,7 @@ Search results tagged:
 
 | Component | Change |
 |-----------|--------|
-| `ghost_bridge.py` | Send `locality` block in registration |
+| `ghost_client.py` | Send `locality` block in registration |
 | `src/mcp.py` | Store locality in bridge registry |
 | `src/mcp.py` | Tag `SearchResult` with `bridge_client` and `bridge_locality` |
 | `src/mcp.py` | Prefer same-bridge for multi-step research (session affinity) |

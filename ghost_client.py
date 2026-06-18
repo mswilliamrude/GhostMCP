@@ -9,12 +9,12 @@ internet connectivity for web research.
 
 Usage:
     # With config file (recommended):
-    python3 ghost_bridge.py --config ~/.ghost_bridge.yaml
+    python3 ghost_client.py --config ~/.ghost_client.yaml
 
     # Quick CLI mode (no config file):
-    python3 ghost_bridge.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000
+    python3 ghost_client.py --connect ws://10.0.10.7:8080/bridge --ports 8080,3000
 
-Config file (~/.ghost_bridge.yaml):
+Config file (~/.ghost_client.yaml):
     server: ws://10.0.10.7:8080/bridge
     client_id: my-laptop
     ports:
@@ -66,7 +66,7 @@ logging.basicConfig(
     format="%(asctime)s [bridge] %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("ghost_bridge")
+log = logging.getLogger("ghost_client")
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ def main():
         epilog="""
 Examples:
   # Config file (recommended — supports hot-reload):
-  %(prog)s --config ~/.ghost_bridge.yaml
+  %(prog)s --config ~/.ghost_client.yaml
 
   # Quick CLI mode:
   %(prog)s --connect ws://10.0.10.7:8080/bridge --ports 8080,3000
@@ -396,7 +396,7 @@ Examples:
     )
     parser.add_argument(
         "--config", "-c",
-        help="Path to YAML config file (default: ~/.ghost_bridge.yaml)",
+        help="Path to YAML config file (default: ~/.ghost_client.yaml)",
     )
     parser.add_argument(
         "--connect",
@@ -439,7 +439,7 @@ Examples:
             config.web_access_mode = "self_only"
     else:
         # Try default config file location
-        default_config = os.path.expanduser("~/.ghost_bridge.yaml")
+        default_config = os.path.expanduser("~/.ghost_client.yaml")
         if os.path.exists(default_config):
             config = BridgeConfig.from_file(default_config)
         else:
