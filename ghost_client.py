@@ -454,8 +454,12 @@ Examples:
 
     loop = asyncio.new_event_loop()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(bridge.shutdown()))
+    # Signal handlers — not supported on Windows, use KeyboardInterrupt fallback
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, lambda: asyncio.ensure_future(bridge.shutdown()))
+    except NotImplementedError:
+        pass  # Windows — handled via KeyboardInterrupt below
 
     try:
         loop.run_until_complete(bridge.start())
