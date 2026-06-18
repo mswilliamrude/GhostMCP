@@ -334,7 +334,216 @@ Every vendor referenced across all tiers, with API details:
 
 ---
 
-## Key Takeaways
+## Search Types: What You Can Actually Do at Each Tier
+
+This is the practical view — what searches can an operator run, what comes back, and how reliable is it.
+
+### Search Type Index
+
+| # | Search Type | Input | What You're Trying to Find |
+|---|---|---|---|
+| S1 | **Search by Name** | First + Last name (+ city/state optional) | Everything about this person |
+| S2 | **Search by Email** | Email address | Who owns this email, what's exposed |
+| S3 | **Search by Phone** | Phone number | Who owns this number, carrier, name |
+| S4 | **Search by Username** | Social handle | Which platforms, real identity behind it |
+| S5 | **Search by Address** | Street address | Who lives/lived there, property details |
+| S6 | **Search by VIN** | Vehicle Identification Number | Vehicle specs, history, owner |
+| S7 | **Search by Domain** | Company domain | Employees, emails, tech stack |
+| S8 | **Search by IP** | IP address | Threat intel, geolocation, breach exposure |
+| S9 | **Court Record Search** | Name or case number | Criminal/civil history, filings |
+| S10 | **Background Check** | Name + DOB/location | Composite report across all sources |
+
+---
+
+### S1: Search by Name
+
+*"Tell me everything about John Smith in Dallas, TX"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | URL links to 15+ people-search sites where user clicks through manually. Federal court cases if any. Sex offender registry check link. | **Low-Indirect** — GhostMCP doesn't return PII directly, it generates links. The *sites* have good data, but you're doing manual work. | URL gen (ThatsThem, FastPeopleSearch, Whitepages, Spokeo, 411, LinkedIn, Facebook), CourtListener, NSOPW |
+| **Budget ($31)** | Everything above + breach records tied to that name (emails, phones, passwords, addresses from breached databases). | **Moderate** — Breach data returns real PII but is name-collision-heavy. "John Smith" will return thousands of results. Need city/state/email to narrow. Freshness: data is from breach date, not current. | + Snusbase (name search), HIBP |
+| **Pro ($90)** | Everything above + if you find their email from breach data, you can enrich it: employer, title, social handles, location via Hunter.io. CNAM on phone numbers found. Bankruptcy/lien records from PACER. | **Good** — The chain works: name → breach data → email → Hunter enrichment → employer/social profiles. CNAM resolves ~45% of phone numbers found. Composite profile is starting to look solid. | + Hunter.io, Twilio CNAM, PACER |
+| **Full ($450)** | Everything above + property ownership records (current/past properties, values, tax history). Dark web exposure. Multiple breach sources cross-referenced. Enough for a composite background report. | **Very Good** — Multiple data sources corroborate each other. Property records confirm addresses. Breach cross-referencing reduces false positives. Dark web shows active threat exposure. | + ATTOM, IntelligenceX, DeHashed |
+| **Broker ($5K+)** | Full BeenVerified-equivalent: verified current address, all historical addresses, relatives, associates, education, employment, licenses, DMV data, comprehensive criminal. | **Excellent** — Live data feeds, not snapshots. Verified, deduplicated, cross-referenced against authoritative sources. | LexisNexis, TLO, USPS NCOALink |
+
+---
+
+### S2: Search by Email
+
+*"What can you tell me about user@example.com?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | Reputation score (suspicious? legit?), breach count (how many breaches), which 120+ websites this email is registered on, social profiles linked to it, domain age/registration. | **Good** — EmailRep gives a solid risk signal. Holehe confirms which platforms they use (Twitter, GitHub, Spotify, etc.). No name/address/phone returned. | EmailRep.io, Holehe |
+| **Budget ($31)** | Everything above + full breach details: which specific breaches, what data classes leaked (passwords, addresses, phone numbers, DOBs), actual PII from breach records (name, address, phone if in breach data). | **Very Good** — If the email appears in Exactis, PeopleDataLabs, or Apollo breaches, you get name, address, phone, employer, and more. ~70% of active emails appear in at least one breach with PII. | + HIBP Core, Snusbase |
+| **Pro ($90)** | Everything above + professional enrichment: full name, job title, company, LinkedIn URL, Twitter handle, location, other emails at the same domain. Email verification (deliverable? catch-all? disposable?). | **Very Good to Excellent** — Hunter.io enrichment is highly accurate for business emails (~85% match rate). Weaker for personal Gmail/Yahoo addresses (~30% match). Combined with breach data, you often get a complete profile. | + Hunter.io (or Snov.io/Apollo) |
+| **Full ($450)** | Everything above + dark web exposure (is this email for sale on darknet markets?), archived web appearances, Tor-indexed content mentioning this email. Second breach source for cross-validation. | **Excellent** — Multiple vantage points dramatically reduce false negatives. IntelX catches things Snusbase misses and vice versa. | + IntelligenceX, DeHashed |
+| **Broker ($5K+)** | Everything above + utility connections, verified current address, credit header data (name, address from credit file — not credit score). | **Excellent** — Authoritative, current data. | LexisNexis, Experian non-credit |
+
+---
+
+### S3: Search by Phone
+
+*"Who owns 214-555-1234?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | Is it valid? Mobile/landline/VOIP? Which carrier (e.g., T-Mobile)? What region/timezone? Formatted in E.164/national/international. URL links to free reverse-phone sites. | **High for validation, zero for identity.** You know it's a valid T-Mobile cell in Dallas, TX — but not who owns it. URL links to USPhonebook/ThatsThem may show owner if user clicks through. | `phonenumbers`, Veriphone, URL gen |
+| **Budget ($31)** | Everything above + breach records associated with this phone number: emails, names, passwords, addresses found in breaches where this phone was a data field. | **Moderate** — Phone numbers appear in fewer breaches than emails (~40% hit rate vs ~70% for email). When there's a hit, the data is usually accurate. Results may include old owners if number was recycled. | + Snusbase (phone search) |
+| **Pro ($90)** | Everything above + **CNAM caller name**: the actual registered subscriber name from the carrier's CNAM database. Then chain: CNAM name → Hunter.io to find their email/employer. | **Moderate-Good** — CNAM works on ~60% of US landlines and ~30% of mobile numbers. When it works, the name is authoritative (it's from the carrier). Mobile CNAM often shows the carrier name instead of the person. VoIP numbers rarely have CNAM. | + Twilio CNAM, Hunter.io (chained) |
+| **Full ($450)** | Everything above + IntelX/DeHashed cross-reference (more breach sources = higher hit rate on phone→identity). Property records can confirm address if name is resolved. | **Good** — Multiple breach sources + CNAM + property cross-reference builds a strong composite. Still ~20-30% of mobile numbers remain unresolvable. | + IntelligenceX, DeHashed, ATTOM |
+| **Broker ($5K+)** | Carrier records, subscriber name, service address, account type, connected devices. Real-time. | **Excellent** — Direct carrier data. | Telecom data licensing |
+
+---
+
+### S4: Search by Username
+
+*"Find everything about username 'darkphoenix42'"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | Which platforms this username exists on (up to 2500+ sites checked). Profile URLs. Profile data extraction (bio, links, avatar) where available. Categorized by platform type (social, gaming, dev, forum, dating, etc.). | **Excellent** — This is where free OSINT shines. Maigret checks 2500+ sites, extracts profile data, and categorizes results. Better coverage than BeenVerified. False positives: ~5-10% (common usernames match unrelated accounts). | Sherlock, Maigret, WhatsMyName |
+| **Budget ($31)** | Everything above + breach records where this username was a login credential. May reveal associated email, password, IP address, name from breached site databases. | **Very Good** — Username→breach search often reveals the email address behind the account, which then unlocks email-based searches. ~50% of unique usernames appear in at least one breach. | + Snusbase (username search) |
+| **Pro ($90)** | Everything above + if breach data reveals an email, chain into Hunter.io enrichment for professional profile. | **Very Good** — The chain username→breach→email→Hunter gives you a path from anonymous handle to real identity in many cases. | + Hunter.io (chained via discovered email) |
+| **Full ($450)** | Everything above + IntelX searches for this username across dark web forums, paste sites, Tor-indexed content, breach forum posts. | **Excellent** — IntelX catches dark web forum posts, paste dumps, and Tor content that Snusbase doesn't index. Valuable for threat actor attribution. | + IntelligenceX |
+| **Broker ($5K+)** | Same — data brokers don't add much for username search. OSINT tools already dominate this category. | **No improvement** — free tools are already best-in-class here. | N/A |
+
+---
+
+### S5: Search by Address
+
+*"Who lives at 1234 Main St, Dallas, TX 75201?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | URL links to people-search sites for reverse address lookup. Geographic data (parcel boundaries, building footprint) from OpenStreetMap. | **Low-Indirect** — You're generating links. The sites behind those links (Whitepages, ThatsThem) often show current residents, but GhostMCP doesn't extract the data — user clicks through. | URL gen, OpenStreetMap/Overpass |
+| **Budget ($31)** | Everything above + breach records containing this address (from breaches that included address fields like Exactis, marketing databases). | **Low-Moderate** — Addresses are less commonly indexed in breach search APIs than email/phone. Snusbase doesn't support address search well. DeHashed does, but it's Tier 3. | + Snusbase (limited address search) |
+| **Pro ($90)** | Same as Budget for address search — no new sources add address lookup capability at this tier. | **Low-Moderate** — Address search is a gap at this tier. The Pro tier additions (Hunter, Twilio, PACER) don't help with address→resident lookup. | Same as Budget |
+| **Full ($450)** | **Major unlock:** ATTOM property records → current owner, purchase date, sale price, tax assessment, property details. DeHashed address field search for breach data. County assessor URL generator. | **Very Good** — ATTOM returns authoritative property ownership data (from county recorder deeds). You know who *owns* it. Doesn't tell you who *rents/lives* there if they're not the owner. | + ATTOM Data, DeHashed (address search) |
+| **Broker ($5K+)** | Current + historical residents (including renters), utility connections, forwarding addresses. | **Excellent** — LexisNexis/TLO have utility connection data showing who has power/gas/internet at an address. | LexisNexis, utility data feeds |
+
+---
+
+### S6: Search by VIN
+
+*"What can you tell me about VIN 1HGCM82633A004352?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | **Full vehicle specifications:** Make, model, year, trim, engine (displacement, cylinders, fuel type), body type, drive type, transmission, safety features (ABS, airbags, ESC), manufacturer name + country, plant city, GVWR. Open safety recalls with campaign details, component, remedy. Consumer complaints count/summary. | **Excellent** — NHTSA vPIC is the authoritative source. It's the same database used by DMVs, insurance companies, and law enforcement. 100% accuracy on specs. Recall data is definitive. | NHTSA vPIC, NHTSA Recalls, NHTSA Complaints |
+| **Budget ($31)** | Everything above. Breach data doesn't add vehicle info. | **Same — Excellent** | Same |
+| **Pro ($90)** | Everything above. No new VIN sources at this tier. | **Same — Excellent** | Same |
+| **Full ($450)** | Everything above + DeHashed supports VIN as a search field — may return breach records where VIN was stored (insurance databases, dealer systems, telematics breaches). | **Excellent+** — Rare to find VIN in breach data, but when you do, it may link to owner name, address, email from the insurance/dealer breach. | + DeHashed (VIN search) |
+| **Broker ($5K+)** | Everything above + vehicle ownership (registered owner name, address), title history, odometer readings, total loss/salvage status, lien information. | **Excellent** — DMV data via DPPA. NMVTIS for title history. | DMV data, NMVTIS, AutoCheck/Carfax |
+
+---
+
+### S7: Search by Domain
+
+*"What can you find about employees at acmecorp.com?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | Email reputation for any known emails @domain. GhostMCP existing tools: subdomains (cert transparency), DNS records, tech stack fingerprinting, TLS certificate details. | **Good for infrastructure, zero for people.** You can map their tech stack and subdomains but can't enumerate employees without paid APIs. | GhostMCP ghost_subdomains, ghost_cert, ghost_recon, EmailRep.io |
+| **Budget ($31)** | Everything above + breach records containing @domain emails — reveals employee names, personal emails, passwords, and which breaches exposed them. | **Good** — Breach data often reveals dozens of employee emails for medium-large companies. Shows who reused passwords, who's on dark web markets. Useful for social engineering assessment. | + Snusbase (domain search), HIBP (domain search at Pro tier) |
+| **Pro ($90)** | **Major unlock:** Hunter.io Domain Search returns all known emails at a domain with: name, position, department, LinkedIn URL, confidence score. Email pattern detection (first.last@, f.last@, etc.). Up to 100 emails per domain on Starter plan. | **Very Good** — Hunter.io is the industry standard for domain→employee enumeration. ~85% accuracy on email patterns. Position/department data is ~60% accurate (scraped from LinkedIn, press releases, etc.). | + Hunter.io Domain Search, Snov.io, Apollo |
+| **Full ($450)** | Everything above + IntelX searches for domain mentions across dark web, paste sites, Tor forums. Comprehensive breach cross-referencing across multiple providers. | **Excellent** — Full picture: every employee email found in breaches + Hunter enrichment + dark web exposure. Good enough for a professional security assessment of the organization's exposure. | + IntelligenceX, DeHashed |
+| **Broker ($5K+)** | Same — corporate domain searches are well-served by Pro/Full tiers. | **Marginal improvement** — data brokers add little for domain OSINT. | N/A |
+
+---
+
+### S8: Search by IP Address
+
+*"What's associated with IP 203.0.113.42?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | GhostMCP existing tools: threat intelligence feeds (URLhaus, ThreatFox, Feodo Tracker, RansomWatch). Is this IP associated with malware C2, botnets, or ransomware? | **Good for threat intel.** GhostMCP's `ghost_threat` tool already checks 4 threat feeds. No geolocation or ASN info at this tier (could add free MaxMind GeoLite2). | GhostMCP ghost_threat |
+| **Budget ($31)** | Everything above + breach records associated with this IP (login IPs captured in breaches, VPN service breaches, webmail login logs). | **Moderate** — IP→breach search is niche. Some breaches captured login IPs (especially webmail and VPN services). When there's a hit, you get the user's email/username who logged in from that IP. | + Snusbase (IP search) |
+| **Pro ($90)** | Same as Budget. Hunter/Twilio/PACER don't add IP search capability. | **Moderate** | Same as Budget |
+| **Full ($450)** | Everything above + IntelX IP search across dark web, paste sites, Tor exit nodes. DeHashed IP field search for broader breach coverage. | **Good** — IntelX is the best API for IP→threat attribution. Catches things threat feeds miss: Tor exit node correlations, paste dumps with IP lists, dark web forum posts mentioning specific IPs. | + IntelligenceX, DeHashed |
+| **Broker ($5K+)** | Same — IP search is an infosec domain, not a data broker domain. | **No improvement** — OSINT tools are already best-in-class. | N/A |
+
+---
+
+### S9: Court Record Search
+
+*"Has Jane Doe been involved in any lawsuits?"*
+
+| Tier | What Comes Back | Accuracy | Sources |
+|---|---|---|---|
+| **Free ($0)** | Federal court cases: case name, docket number, court, filing date, parties, attorneys, judges. Opinions/rulings text. RECAP archive of PACER filings. URL links to Judyrecords (600M state cases searchable) and state court portals. | **Good for federal, partial for state.** CourtListener covers all federal courts comprehensively. State coverage varies — some states are well-covered via RECAP, most are URL-gen only. | CourtListener/RECAP, Judyrecords URL, state court URLs |
+| **Budget ($31)** | Same as Free. Breach data doesn't add court records. | **Same — Good** | Same |
+| **Pro ($90)** | Everything above + PACER direct access for federal filings not yet in RECAP. Bankruptcy filings, liens, judgments from federal courts. ~$0.10/page, $3 cap per document. | **Very Good** — PACER fills gaps in RECAP. Bankruptcy/lien data is particularly valuable — this is financial history that BeenVerified charges for. Typical cost: $10-20/mo for moderate research. | + PACER ($0.10/page) |
+| **Full ($450)** | Same as Pro. Property records from ATTOM may cross-reference with lien data. | **Very Good** | Same + ATTOM (lien cross-ref) |
+| **Broker ($5K+)** | All federal + state court records aggregated, normalized, and searchable via single API. Continuous monitoring for new filings. | **Excellent** — UNICOURT ($500+/mo) or LexisNexis provides unified federal+state coverage. | UNICOURT, LexisNexis |
+
+---
+
+### S10: Background Check (Composite Report)
+
+*"Run a full background on this person"*
+
+| Tier | What Comes Back | Accuracy | Report Quality |
+|---|---|---|---|
+| **Free ($0)** | A collection of URL links to manually check + whatever CourtListener returns for court records + VIN specs if they have a vehicle + username platform hits. No unified report. | **Low** — Too fragmented. The user is doing most of the work clicking through URLs. Not enough data for a meaningful automated report. | No report — just links |
+| **Budget ($31)** | Person profile reconstructed from breach data (name, emails, phones, addresses, passwords, employers from breaches) + all Free tier data. Can generate a partial structured report. | **Moderate** — Breach data is the backbone. Report has real PII but with caveats: data may be stale, multiple people may share a name, no verification against authoritative sources. Useful for preliminary research. | Partial report — breach-reconstructed profile + court records + social accounts |
+| **Pro ($90)** | Breach profile + Hunter.io professional enrichment + CNAM phone resolution + bankruptcy/lien records from PACER + social media platforms. Cross-referenced across sources. Can generate a good structured report with confidence scores per data point. | **Good** — Multiple sources corroborate: if breach data says they work at AcmeCorp AND Hunter.io confirms an email at acmecorp.com AND LinkedIn profile matches, confidence is high. Report flags contradictions between sources. | Good report — multi-source composite with confidence ratings, source attribution |
+| **Full ($450)** | Everything above + property records (homes owned, values, deed history) + dark web exposure scan + multiple breach provider cross-validation. Comprehensive structured report with every data point sourced and rated. | **Very Good** — This is a legitimate OSINT dossier. Property records add financial context. Dark web exposure adds threat assessment. Multiple breach sources reduce false negatives. Still lacks relatives/education/licenses. | Comprehensive report — property, financial, professional, criminal, breach exposure, dark web, social media |
+| **Broker ($5K+)** | Full BeenVerified-equivalent report: verified identity, all addresses, relatives, education, employment, licenses, criminal (all states), vehicles owned, credit header. FCRA-compliant format if needed. | **Excellent** — Authoritative, current, verified against primary sources. | Full professional background report |
+
+---
+
+### Accuracy Rating Summary (All Search Types x All Tiers)
+
+Scale: **-** = not available, **L** = Low, **M** = Moderate, **G** = Good, **VG** = Very Good, **E** = Excellent
+
+| Search Type | Free ($0) | Budget ($31) | Pro ($90) | Full ($450) | Broker ($5K+) |
+|---|---|---|---|---|---|
+| **S1: By Name** | L (links only) | M (breach PII, name collisions) | G (breach + enrichment + CNAM chain) | VG (+ property, dark web, cross-ref) | E (live verified data) |
+| **S2: By Email** | G (reputation + accounts) | VG (breach PII, ~70% hit rate) | VG-E (+ professional enrichment) | E (multi-source, dark web) | E (+ utility, credit header) |
+| **S3: By Phone** | High validation, no identity | M (~40% breach hit rate) | M-G (CNAM 60% landline/30% mobile) | G (+ multi-breach cross-ref) | E (carrier subscriber data) |
+| **S4: By Username** | E (2500+ sites, best-in-class) | VG (+ breach credentials, ~50% hit) | VG (+ email chain to Hunter) | E (+ dark web forums) | E (same — free is already best) |
+| **S5: By Address** | L (links only) | L-M (limited breach address search) | L-M (no new address sources) | VG (ATTOM property ownership) | E (residents, utilities, forwarding) |
+| **S6: By VIN** | E (NHTSA — authoritative) | E (same) | E (same) | E (+ breach VIN if available) | E (+ owner, title history, liens) |
+| **S7: By Domain** | G (infrastructure only) | G (+ breach employee emails) | VG (Hunter.io employee enum, ~85%) | E (+ dark web, multi-breach) | E (marginal improvement) |
+| **S8: By IP** | G (threat feeds) | M (limited breach IP data) | M (same) | G (IntelX dark web, Tor correlation) | G (same — OSINT is best here) |
+| **S9: Court Records** | G (federal strong, state partial) | G (same) | VG (+ PACER bankruptcy/liens) | VG (+ property lien cross-ref) | E (unified federal + state) |
+| **S10: Background** | L (fragmented links) | M (breach-reconstructed profile) | G (multi-source composite report) | VG (comprehensive OSINT dossier) | E (full professional report) |
+
+### Where Each Tier Punches Above Its Weight
+
+| Tier | Strongest Search Types | Why |
+|---|---|---|
+| **Free ($0)** | Username (E), VIN (E), Email reputation (G) | OSS tools (Maigret/Sherlock) and government APIs (NHTSA) are genuinely world-class at these specific tasks. |
+| **Budget ($31)** | Email→identity (VG), Username→identity (VG) | Breach data is the great equalizer. $31/mo unlocks PII that data brokers charge $5K/mo for. |
+| **Pro ($90)** | Domain→employees (VG), Background check (G), Court records (VG) | Hunter.io + PACER fill the professional/financial research gaps. The breach→email→Hunter chain creates a name→identity pipeline. |
+| **Full ($450)** | Address→owner (VG), Background check (VG), Dark web (E) | ATTOM property data is the big unlock. IntelX provides visibility into dark web that no cheaper option matches. |
+| **Broker ($5K+)** | Name→everything (E), Address→residents (E), Background (E) | Live, verified, comprehensive. But only 10-15% better than Full tier for 10x the cost. |
+
+### The Diminishing Returns Curve
+
+```
+Coverage %
+100 |                                                    _____ Broker ($5K+)
+ 95 |                                               ____/
+ 90 |                                          ____/
+ 85 |                                     ____/  Full ($450)
+ 80 |                                ____/
+ 75 |                           ____/  Pro ($90)
+ 70 |                      ____/
+ 65 |                 ____/  Budget ($31)
+ 60 |            ____/
+ 55 |       ____/
+ 50 |  ____/
+ 45 | /  Free ($0)
+ 40 |/
+    +-----|---------|---------|---------|---------|-----> $/mo
+    $0   $31       $90      $450    $5,000
+```
+
+**The steepest value curve is $0→$31.** After $450/mo, you're paying exponentially more for marginal gains. The $31→$90 jump is the second-best value, primarily because Hunter.io unlocks the email→professional-identity pipeline that makes name searches actually useful.
 
 1. **The $0 → $31/mo jump is the biggest value inflection point.** Adding HIBP + Snusbase unlocks breach-sourced PII that would otherwise cost $5K+/mo through data brokers. This takes coverage from 45% to 65%.
 
