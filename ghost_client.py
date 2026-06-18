@@ -47,13 +47,13 @@ from typing import Optional
 try:
     import httpx
 except ImportError:
-    print("ERROR: httpx required. Install with: pip install httpx")
+    print("ERROR: httpx required. Install with: pip install httpx", file=sys.stderr)
     sys.exit(1)
 
 try:
     import websockets
 except ImportError:
-    print("ERROR: websockets required. Install with: pip install websockets")
+    print("ERROR: websockets required. Install with: pip install websockets", file=sys.stderr)
     sys.exit(1)
 
 try:
@@ -100,7 +100,7 @@ class BridgeConfig:
     def from_file(cls, path: str) -> BridgeConfig:
         """Load config from YAML file."""
         if yaml is None:
-            print("ERROR: PyYAML required for config files. Install with: pip install pyyaml")
+            print("ERROR: PyYAML required for config files. Install with: pip install pyyaml", file=sys.stderr)
             sys.exit(1)
 
         cfg = cls()
