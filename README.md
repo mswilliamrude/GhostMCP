@@ -40,6 +40,21 @@ python3 -m pytest tests/ -v    # 243 tests, all passing
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
 ```
 
+### Windows (MSYS2 UCRT64)
+
+For running `ghost_client.py` on Windows with MSYS2:
+
+```bash
+# Required packages (UCRT64 — note the ucrt prefix)
+pacman -S mingw-w64-ucrt-x86_64-python-httpx mingw-w64-ucrt-x86_64-python-websockets mingw-w64-ucrt-x86_64-python-yaml
+
+# IMPORTANT: Do NOT use the non-ucrt packages (mingw-w64-x86_64-*)
+# Those install to MINGW64 site-packages which UCRT64 Python cannot find.
+
+# Run the bridge client
+python3 ghost_client.py --config ~/.ghost_client.yaml
+```
+
 ### MCP Client Configuration
 
 #### opencode / Claude Desktop / Cursor
