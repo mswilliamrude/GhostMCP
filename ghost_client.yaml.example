@@ -1,0 +1,77 @@
+# =============================================================================
+# GhostMCP Client Configuration
+# =============================================================================
+# This file is monitored for changes — edit while running, no restart needed.
+# Default location: ~/.ghost_client.yaml
+# Override with: python3 ghost_client.py --config /path/to/config.yaml
+#
+# Documentation: docs/design/DISTRIBUTED_BRIDGE_NETWORK.md
+# =============================================================================
+
+# GhostMCP server WebSocket URL
+# For local Docker: ws://localhost:8080/bridge
+# For Azure ACI:    ws://10.0.10.7:8080/bridge
+server: ws://10.0.10.7:8080/bridge
+
+# Unique identifier for this client
+# Used in logs, result provenance, and bridge pool management
+# Default: auto-generated from hostname + timestamp
+client_id: my-laptop
+
+# =============================================================================
+# Local Service Testing
+# =============================================================================
+# Ports on localhost that GhostMCP tools can access for webapp testing.
+# Only listed ports are reachable — explicit opt-in per port.
+# Add/remove ports while running — changes picked up automatically.
+#
+# Example: Vue dev server on 5173, REST API on 3000, admin UI on 8081
+ports:
+  - 8080
+  # - 3000
+  # - 5173
+
+# =============================================================================
+# Web Access (Internet Connectivity for GhostMCP)
+# =============================================================================
+# When GhostMCP runs in a private VNet with no internet egress,
+# this client can provide web connectivity for search and fetch tools.
+#
+# WARNING: When enabled, GhostMCP's ghost_search, ghost_fetch, and ghost_dork
+# tools will make HTTP requests FROM YOUR MACHINE'S IP ADDRESS.
+#
+# Default: false (localhost port forwarding only)
+allow_web_access: false
+
+# Controls who can use this client's internet connection for searches.
+# Only applies when allow_web_access is true.
+#
+# Options:
+#   false     — No web access (same as allow_web_access: false)
+#   self_only — Only YOUR agent sessions route through YOUR connection.
+#               Other developers' searches will not use your IP.
+#   shared    — Your client is added to a round-robin pool. GhostMCP
+#               distributes search traffic across all shared clients
+#               for organic IP rotation. Each search may use a different
+#               client's IP address.
+#
+# Default: self_only (safest when web access is enabled)
+web_access_mode: self_only
+
+# =============================================================================
+# Locality (Geographic Context)
+# =============================================================================
+# Optional — helps GhostMCP understand geographic bias in search results.
+# Search engines return different results based on where the request originates.
+#
+# When provided, search results are tagged with your locality so agents can
+# reason about geographic bias. When multiple clients are in the shared pool,
+# GhostMCP can intentionally vary search locality for OSINT research.
+#
+# If omitted, GhostMCP will auto-detect locality from your client's source IP
+# using GeoIP lookup on the server side.
+#
+# locality:
+#   region: US-TX            # ISO 3166-2 region code (e.g. US-TX, US-WA, GB-LND, DE-BE)
+#   timezone: US/Central     # IANA timezone (e.g. US/Central, US/Pacific, Europe/London)
+#   label: "Austin office"   # Human-readable description (shown in result provenance)

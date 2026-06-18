@@ -113,6 +113,45 @@ def _unregister_bridge(client_id: str):
             future.set_result({"error": f"Bridge '{client_id}' disconnected"})
 
 
+async def _detect_locality(ip: str) -> dict:
+    """Auto-detect locality from a client's source IP via free GeoIP API.
+    
+    Returns dict with region, timezone, label — or empty dict on failure.
+    Uses ip-api.com (free, no key, 45 req/min).
+    """
+    if ip in ("127.0.0.1", "::1", "localhost"):
+        return {"region": "local", "timezone": "local", "label": "localhost"}
+    
+    # RFC 1918 / private ranges — can't geolocate
+    if ip.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.",
+                       "172.20.", "172.21.", "172.22.", "172.23.",
+                       "172.24.", "172.25.", "172.26.", "172.27.",
+                       "172.28.", "172.29.", "172.30.", "172.31.",
+                       "192.168.")):
+        return {"region": "private", "timezone": "unknown", "label": f"private ({ip})"}
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city,timezone,isp")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    region = data.get("regionName", "")
+                    country = data.get("country", "")
+                    city = data.get("city", "")
+                    return {
+                        "region": f"{country}-{region}",
+                        "timezone": data.get("timezone", ""),
+                        "label": f"{city}, {region}" if city else region,
+                        "isp": data.get("isp", ""),
+                        "auto_detected": True,
+                    }
+    except Exception:
+        pass
+    
+    return {}
+
+
 async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
                             body: str = None, requesting_client: str = "") -> dict:
     """Route an HTTP request through a connected bridge client.
@@ -1430,6 +1469,15 @@ def main() -> None:
                 web_access = msg.get("allow_web_access", False)
                 web_mode = msg.get("web_access_mode", "false")
                 locality = msg.get("locality", {})
+                
+                # Auto-detect locality from client's source IP if not provided
+                if not locality:
+                    try:
+                        client_host = websocket.client.host if websocket.client else None
+                        if client_host:
+                            locality = await _detect_locality(client_host)
+                    except Exception:
+                        pass
                 
                 # Register this bridge client
                 _register_bridge(client_id, {
