@@ -65,6 +65,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [bridge] %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
+    stream=sys.stderr,
 )
 log = logging.getLogger("ghost_client")
 
