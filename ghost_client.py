@@ -415,6 +415,10 @@ Examples:
         help="Allow GhostMCP to route web requests through this machine",
     )
     parser.add_argument(
+        "--proxy", action="store_true",
+        help="Run as MCP stdio proxy (for opencode 'type: local' integration)",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Enable debug logging",
     )
@@ -450,7 +454,19 @@ Examples:
         parser.error("No server URL specified. Set 'server' in config or use --connect")
         return
 
-    bridge = GhostBridge(config)
+    # Dispatch to proxy mode or bridge-only mode
+    if args.proxy:
+        # MCP stdio proxy — opencode launches this as "type: local"
+        if args.verbose:
+            log.setLevel(logging.DEBUG)
+        else:
+            # In proxy mode, suppress bridge logs to stderr so they don't
+            # interfere with JSON-RPC on stdout
+            logging.getLogger("ghost_bridge").setLevel(logging.WARNING)
+        main_proxy(config)
+    else:
+        # Bridge-only mode — standalone, no stdio proxy
+        bridge = GhostBridge(config)
 
     loop = asyncio.new_event_loop()
 
@@ -465,6 +481,150 @@ Examples:
         loop.run_until_complete(bridge.start())
     except KeyboardInterrupt:
         loop.run_until_complete(bridge.shutdown())
+    finally:
+        loop.close()
+
+
+# ---------------------------------------------------------------------------
+# MCP Stdio Proxy Mode
+# ---------------------------------------------------------------------------
+# When launched by opencode as a "type": "local" MCP server, this acts as
+# a transparent proxy: reads JSON-RPC from stdin, forwards to GhostMCP via
+# WebSocket, returns responses on stdout. Simultaneously handles bridge
+# requests (localhost fetches) from the server.
+
+class MCPProxy:
+    """Stdio MCP proxy — forwards JSON-RPC between opencode and GhostMCP."""
+
+    def __init__(self, config: BridgeConfig):
+        self.config = config
+        self.ws = None
+        self.bridge = GhostBridge(config)
+        self.running = False
+        self._pending_responses: dict[str, asyncio.Future] = {}
+
+    async def start(self):
+        """Connect to GhostMCP and start proxying stdio ↔ WebSocket."""
+        self.running = True
+
+        # Connect WebSocket to GhostMCP
+        backoff = 5
+        while self.running:
+            try:
+                log.info(f"Connecting to {self.config.server_url}...")
+                async with websockets.connect(
+                    self.config.server_url.replace("/bridge", "/ws"),
+                    additional_headers={"X-Client-ID": self.config.client_id},
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5,
+                ) as mcp_ws:
+                    self.ws = mcp_ws
+                    backoff = 5
+
+                    # Also connect bridge channel if ports/web_access configured
+                    bridge_task = None
+                    if self.config.ports or self.config.allow_web_access:
+                        bridge_task = asyncio.create_task(self._run_bridge())
+
+                    # Run stdin reader + ws reader concurrently
+                    await asyncio.gather(
+                        self._stdin_reader(mcp_ws),
+                        self._ws_reader(mcp_ws),
+                    )
+
+            except websockets.ConnectionClosed as e:
+                log.warning(f"MCP connection closed: {e}")
+            except ConnectionRefusedError:
+                log.warning(f"Connection refused: {self.config.server_url}")
+            except Exception as e:
+                log.error(f"Connection error: {type(e).__name__}: {e}")
+
+            if not self.running:
+                break
+
+            log.info(f"Reconnecting in {backoff}s...")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+    async def _run_bridge(self):
+        """Run the bridge connection in parallel with MCP proxy."""
+        try:
+            await self.bridge.start()
+        except Exception as e:
+            log.debug(f"Bridge task ended: {e}")
+
+    async def _stdin_reader(self, ws):
+        """Read JSON-RPC from stdin and forward to GhostMCP via WebSocket."""
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+
+        while self.running:
+            line = await reader.readline()
+            if not line:
+                break  # EOF
+
+            line_str = line.decode("utf-8").strip()
+            if not line_str:
+                continue
+
+            # Forward to GhostMCP
+            try:
+                await ws.send(line_str)
+            except Exception as e:
+                # Connection lost — write error response
+                try:
+                    msg = json.loads(line_str)
+                    error_resp = json.dumps({
+                        "jsonrpc": "2.0",
+                        "id": msg.get("id"),
+                        "error": {"code": -32000, "message": f"GhostMCP connection lost: {e}"}
+                    })
+                    sys.stdout.write(error_resp + "\n")
+                    sys.stdout.flush()
+                except Exception:
+                    pass
+                break
+
+    async def _ws_reader(self, ws):
+        """Read responses from GhostMCP WebSocket and write to stdout."""
+        try:
+            async for message in ws:
+                if isinstance(message, bytes):
+                    message = message.decode("utf-8")
+                sys.stdout.write(message + "\n")
+                sys.stdout.flush()
+        except websockets.ConnectionClosed:
+            pass
+
+    async def shutdown(self):
+        """Graceful shutdown."""
+        self.running = False
+        await self.bridge.shutdown()
+        if self.ws:
+            try:
+                await self.ws.close()
+            except Exception:
+                pass
+
+
+def main_proxy(config: BridgeConfig):
+    """Run as MCP stdio proxy (launched by opencode/IDE)."""
+    proxy = MCPProxy(config)
+
+    loop = asyncio.new_event_loop()
+
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, lambda: asyncio.ensure_future(proxy.shutdown()))
+    except NotImplementedError:
+        pass
+
+    try:
+        loop.run_until_complete(proxy.start())
+    except KeyboardInterrupt:
+        loop.run_until_complete(proxy.shutdown())
     finally:
         loop.close()
 
