@@ -236,6 +236,7 @@ from .recon.username import UsernameReport, username_lookup
 from .recon.court import CourtSearchResult, CourtCase, court_search
 from .recon.breach import BreachSearchResult, BreachRecord, breach_search
 from .recon.report import BackgroundReport, generate_report
+from .recon.ip_intel import IPReport, ip_lookup
 from .utils.config import ParanoiaLevel
 
 
@@ -1791,6 +1792,77 @@ async def ghost_breach(
         return "Error: query is required."
     report = await breach_search(query, query_type=query_type, mode=mode)
     return _format_breach_report(report)
+
+
+def _format_ip_report(r: IPReport) -> str:
+    """Format IP lookup result as readable text."""
+    if r.error:
+        return f"IP lookup error: {r.error}"
+    lines = [f"=== IP Intelligence: {r.ip} ===", ""]
+    lines.append(f"Valid:         {r.valid}")
+    if r.country:
+        lines.append(f"Country:       {r.country} ({r.country_code})")
+    if r.region_name:
+        lines.append(f"Region:        {r.region_name} ({r.region})")
+    if r.city:
+        lines.append(f"City:          {r.city}")
+    if r.zip_code:
+        lines.append(f"ZIP:           {r.zip_code}")
+    if r.latitude is not None:
+        lines.append(f"Coordinates:   {r.latitude}, {r.longitude}")
+    if r.timezone:
+        lines.append(f"Timezone:      {r.timezone}")
+    lines.append("")
+    if r.isp:
+        lines.append(f"ISP:           {r.isp}")
+    if r.org:
+        lines.append(f"Organization:  {r.org}")
+    if r.asn:
+        lines.append(f"ASN:           {r.asn}")
+    if r.as_name:
+        lines.append(f"AS Name:       {r.as_name}")
+    if r.reverse_dns:
+        lines.append(f"Reverse DNS:   {r.reverse_dns}")
+    lines.append("")
+    flags = []
+    if r.is_mobile:
+        flags.append("MOBILE")
+    if r.is_proxy:
+        flags.append("PROXY/VPN")
+    if r.is_hosting:
+        flags.append("HOSTING/DATACENTER")
+    if flags:
+        lines.append(f"Flags:         {', '.join(flags)}")
+    else:
+        lines.append("Flags:         None (residential)")
+    if r.threat_hits:
+        lines.append(f"\nThreat Hits ({len(r.threat_hits)}):")
+        for hit in r.threat_hits[:5]:
+            lines.append(f"  - {hit}")
+    if r.search_urls:
+        lines.append("\nSearch URLs:")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_ip",
+    description=(
+        "Look up an IP address: geolocation (country, city, coordinates), ISP/ASN, "
+        "organization, reverse DNS, and proxy/VPN/hosting detection. Uses ip-api.com "
+        "(free, no key, 45 req/min). Generates investigation URLs for Shodan, "
+        "AbuseIPDB, GreyNoise, VirusTotal, Censys, and more."
+    ),
+    parameters={
+        "ip": {"type": "string", "description": "IPv4 or IPv6 address to investigate."},
+    },
+)
+async def ghost_ip(ip: str) -> str:
+    if not ip:
+        return "Error: ip is required."
+    report = await ip_lookup(ip)
+    return _format_ip_report(report)
 
 
 def _format_background_report(r: BackgroundReport) -> str:

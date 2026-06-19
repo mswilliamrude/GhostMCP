@@ -789,3 +789,67 @@ class TestReportIntegration:
         assert len(report.data_sources) >= 3
         # Confidence ratings should have some entries
         assert len(report.confidence_ratings) >= 1
+
+
+# ---------------------------------------------------------------------------
+# IP Intelligence Integration
+# ---------------------------------------------------------------------------
+
+class TestIPIntegration:
+    """Integration tests for ghost_ip — ip-api.com (free, no key)."""
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_lookup_google_dns(self):
+        """Look up 8.8.8.8 (Google Public DNS) — well-known, stable."""
+        from src.recon.ip_intel import ip_lookup
+
+        report = await ip_lookup("8.8.8.8")
+
+        assert report.valid
+        assert report.error is None
+        assert report.country == "United States"
+        assert report.isp  # Should have ISP info
+        assert "Google" in report.org or "Google" in report.isp
+        assert report.asn  # Should have ASN
+        assert report.is_hosting is True  # Google DNS is datacenter-hosted
+        assert report.timezone
+        assert len(report.search_urls) >= 9
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_lookup_cloudflare_dns(self):
+        """Look up 1.1.1.1 (Cloudflare DNS) — another well-known IP."""
+        from src.recon.ip_intel import ip_lookup
+        import asyncio
+
+        await asyncio.sleep(1.5)  # Rate limit courtesy
+        report = await ip_lookup("1.1.1.1")
+
+        assert report.valid
+        assert report.error is None
+        assert report.country  # Should have a country
+        assert report.isp or report.org  # Should have network info
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_invalid_ip(self):
+        """Verify error handling for invalid IP."""
+        from src.recon.ip_intel import ip_lookup
+
+        report = await ip_lookup("999.999.999.999")
+        assert report.error is not None
+        assert not report.valid
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_private_range(self):
+        """Private IPs should fail gracefully (ip-api returns fail status)."""
+        from src.recon.ip_intel import ip_lookup
+        import asyncio
+
+        await asyncio.sleep(1.5)  # Rate limit courtesy
+        report = await ip_lookup("192.168.1.1")
+
+        # ip-api returns "fail" for private/reserved ranges
+        assert report.error is not None or report.country == ""
