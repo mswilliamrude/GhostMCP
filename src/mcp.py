@@ -1508,16 +1508,27 @@ async def ghost_people(
 ) -> str:
     if not query_type:
         return "Error: query_type is required (name, phone, email, address, username)."
-    report = await people_search(
-        query_type=query_type,
-        first=first, last=last, phone=phone, email=email,
-        username=username, street=street, city=city, state=state,
-    )
+    # Only pass relevant kwargs per query_type to avoid TypeError
+    kwargs: dict = {}
+    qt = query_type.strip().lower()
+    if qt == "name":
+        kwargs = {"first": first, "last": last, "city": city, "state": state}
+    elif qt == "phone":
+        kwargs = {"phone": phone}
+    elif qt == "email":
+        kwargs = {"email": email}
+    elif qt == "address":
+        kwargs = {"street": street, "city": city, "state": state}
+    elif qt == "username":
+        kwargs = {"username": username}
+    else:
+        return f"Error: unknown query_type '{query_type}'. Use: name, phone, email, address, username."
+    report = await people_search(query_type=query_type, **kwargs)
     return _format_people_report(report)
 
 
 def _format_email_report(r: EmailReport) -> str:
-    if r.error:
+    if getattr(r, "error", None):
         return f"Email lookup error: {r.error}"
     lines = [f"=== Email Intelligence: {r.email} ===", ""]
     lines.append(f"Domain:          {r.domain}")
