@@ -6,11 +6,13 @@
 
 ## What Is This
 
-GhostMCP is a standalone OSINT search and reconnaissance toolkit that exposes its capabilities via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It enables AI coding agents (Claude, GPT, etc.) to search the web, build Google dork queries, fetch URL content, and perform passive domain reconnaissance — all without leaving the IDE.
+GhostMCP is a standalone OSINT search and reconnaissance toolkit that exposes its capabilities via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It enables AI coding agents (Claude, GPT, etc.) to search the web, build Google dork queries, fetch URL content, perform passive domain reconnaissance, enumerate people and assets, and query threat intelligence — all without leaving the IDE.
 
-Designed as both a **development workflow accelerator** (find answers faster) and an **OSINT/recon capability** (discover exposed infrastructure, sensitive files, and threat intelligence).
+Designed as both a **development workflow accelerator** (find answers faster) and an **OSINT/recon capability** (discover exposed infrastructure, sensitive files, threat intelligence, and people-linked data).
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
+
+**v0.4.0** — 20 tools, 749 unit tests + 35 integration tests, all passing.
 
 ---
 
@@ -35,8 +37,11 @@ pip install httpx pytest pytest-asyncio
 # Optional: better Google scraping stealth
 pip install curl_cffi
 
+# Optional: headless browser rendering
+pip install playwright && playwright install chromium
+
 # Verify it works
-python3 -m pytest tests/ -v    # 243 tests, all passing
+python3 -m pytest tests/ -v    # 749 unit tests, all passing
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
 ```
 
@@ -76,7 +81,8 @@ Add to your MCP configuration (`opencode.json`, `claude_desktop_config.json`, et
         "GHOST_PARANOIA": "cautious",
         "GHOST_MIN_DELAY": "2.0",
         "SERPER_API_KEY": "optional-for-google-results",
-        "VT_API_KEY": "optional-for-virustotal"
+        "VT_API_KEY": "optional-for-virustotal",
+        "GHOST_HIBP_KEY": "optional-for-breach-lookups"
       }
     }
   }
@@ -89,9 +95,13 @@ Restart your MCP client after adding the configuration.
 
 ## MCP Tools
 
-GhostMCP exposes 4 tools via the Model Context Protocol:
+GhostMCP exposes 20 tools via the Model Context Protocol, organized into four categories:
 
-### `ghost_search` — Anonymous Web Search
+---
+
+### 1. Search & Discovery
+
+#### `ghost_search` — Anonymous Web Search
 
 Search the web using multiple engines with automatic fallback. Engines are tried in order: Serper (if API key set) → Google (HTML scrape) → DuckDuckGo Lite.
 
@@ -113,7 +123,7 @@ Search the web using multiple engines with automatic fallback. Engines are tried
 
 ---
 
-### `ghost_dork` — Google Dorking
+#### `ghost_dork` — Google Dorking
 
 Build and optionally execute Google dork queries using operators or predefined templates. Dorking uses advanced search operators to find specific content that regular searches miss — exposed config files, admin panels, sensitive documents, etc.
 
@@ -134,22 +144,20 @@ Build and optionally execute Google dork queries using operators or predefined t
 
 **Built-in Templates (12):**
 
-| Template | What It Finds | Example Query |
-|----------|---------------|---------------|
-| `exposed_configs` | Config files (.env, .yml, .ini, .conf) exposed on a domain | `site:example.com (filetype:env OR filetype:yml ...) -github.com` |
-| `login_pages` | Admin panels, login pages, auth endpoints | `site:example.com (inurl:login OR inurl:admin ...)` |
-| `directory_listing` | Open directory indexes (file listings) | `site:example.com intitle:"index of" (inurl:admin ...)` |
-| `git_exposed` | Exposed .git directories and config | `site:example.com (inurl:".git" OR intitle:"index of /.git" ...)` |
-| `env_files` | Environment files with credentials | `site:example.com (filetype:env ...) ("DB_PASSWORD" OR "API_KEY" ...)` |
-| `api_docs` | API documentation pages (Swagger, GraphQL) | `site:example.com (inurl:api OR inurl:swagger ...)` |
-| `error_messages` | Stack traces, SQL errors, debug output | `site:example.com ("fatal error" OR "stack trace" ...)` |
-| `tech_stack` | Technology identification (WordPress, Node, etc.) | `site:example.com (inurl:wp-content OR "powered by" ...)` |
-| `database_dumps` | Database exports (.sql, .db, .sqlite, .bak) | `site:example.com (filetype:sql OR filetype:db ...) -github.com` |
-| `sensitive_docs` | Confidential documents (PDF, XLSX, DOCX) | `site:example.com (filetype:pdf ...) ("confidential" ...)` |
-| `subdomains` | Subdomain discovery via search | `site:*.example.com -www.example.com` |
-| `backup_files` | Backup files (.bak, .old, .zip, .tar.gz) | `site:example.com (filetype:bak ...) (inurl:backup ...)` |
-
-**Background:** Google dorking (also called Google hacking) uses advanced search operators to find content that site owners didn't intend to be publicly accessible. The technique was pioneered by Johnny Long in the early 2000s and formalized in the Google Hacking Database (GHDB). GhostMCP's dorking module lets you build queries programmatically using operators (`site:`, `filetype:`, `inurl:`, `intitle:`, `intext:`, exclude with `-`) or use predefined templates for common OSINT scenarios.
+| Template | What It Finds |
+|----------|---------------|
+| `exposed_configs` | Config files (.env, .yml, .ini, .conf) exposed on a domain |
+| `login_pages` | Admin panels, login pages, auth endpoints |
+| `directory_listing` | Open directory indexes (file listings) |
+| `git_exposed` | Exposed .git directories and config |
+| `env_files` | Environment files with credentials |
+| `api_docs` | API documentation pages (Swagger, GraphQL) |
+| `error_messages` | Stack traces, SQL errors, debug output |
+| `tech_stack` | Technology identification (WordPress, Node, etc.) |
+| `database_dumps` | Database exports (.sql, .db, .sqlite, .bak) |
+| `sensitive_docs` | Confidential documents (PDF, XLSX, DOCX) |
+| `subdomains` | Subdomain discovery via search |
+| `backup_files` | Backup files (.bak, .old, .zip, .tar.gz) |
 
 **Example:**
 ```
@@ -161,66 +169,111 @@ Build and optionally execute Google dork queries using operators or predefined t
 
 ---
 
-### `ghost_fetch` — URL Content Extraction
+#### `ghost_fetch` — URL Content Extraction
 
-Fetch a URL and extract its content in various formats. Uses stealth headers and supports proxy routing through the paranoia system.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `url` | string | (required) | URL to fetch |
-| `extract` | string | `"text"` | Mode: `text` (readable), `html` (raw), `headers`, `links` |
-| `paranoia` | string | `"cautious"` | OpSec level |
-
-**Extraction modes:**
-- `text` — Strips scripts, styles, and HTML tags. Returns readable text content (truncated at 20KB).
-- `html` — Returns raw HTML (truncated at 50KB).
-- `headers` — Returns HTTP response headers (server version, content type, security headers).
-- `links` — Extracts and deduplicates all `href` URLs from the page.
-
-**Background:** Unlike a simple `curl`, ghost_fetch applies browser fingerprinting (realistic User-Agent, Accept headers, language preferences) based on the paranoia level. In ghost/midnight modes, requests route through Tor with the Tor Browser's standard User-Agent for consistency with other Tor users. Content extraction strips JavaScript and CSS before returning text, making it suitable for feeding into AI context windows.
+Fetch a URL and extract its content in various formats. Supports text extraction, raw HTML, response headers, and link extraction. Uses stealth headers and proxy routing via the paranoia system. **No API key required.**
 
 ---
 
-### `ghost_recon` — Domain Reconnaissance
+#### `ghost_recon` — Domain Reconnaissance
 
-Passive reconnaissance on a target domain. Runs dorking-based modules to discover subdomains, exposed configurations, and technology stack.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `domain` | string | (required) | Target domain |
-| `modules` | array | `["subdomains"]` | Modules: `subdomains`, `configs`, `tech` |
-
-**Modules:**
-- `subdomains` — Finds subdomains via `site:*.domain.com` dorking (up to 20 results)
-- `configs` — Searches for exposed configuration files (env, yml, ini, conf) on the domain
-- `tech` — Identifies technology stack (WordPress, Node.js, vendor directories, "powered by" strings)
-
-**Background:** Passive recon collects information about a target without directly interacting with it (no port scans, no vulnerability probes). All discovery is done through search engine queries — the target's web server never sees a request from GhostMCP. This makes it safe, legal, and undetectable. The modules are composable — run all three for a comprehensive overview, or just one for targeted intelligence.
+Passive reconnaissance on a target domain. Runs dorking-based modules to discover subdomains, exposed configurations, and technology stack. Composable modules: `subdomains`, `configs`, `tech`. **No API key required.**
 
 ---
 
-## Additional Capabilities
+### 2. Security Intelligence
 
-### Hash Intelligence (`src/recon/hashes.py`)
+#### `ghost_hash` — Hash Intelligence
 
-Look up file hashes against multiple threat intelligence databases to determine if a file is known-good, malicious, or unknown.
+Look up a hash (MD5, SHA1, SHA256, SHA512) against threat intelligence services: CIRCL NSRL, MalwareBazaar, ThreatFox, VirusTotal. Can also compute hashes from a local file path. Returns verdict (clean/malicious/suspicious/unknown). **No API key required** (VT optional via `VT_API_KEY`).
 
-**Services queried (all free, no API key required):**
-- **CIRCL NSRL** — National Software Reference Library (known legitimate files)
-- **MalwareBazaar** (abuse.ch) — Malware sample database (family, tags, first seen)
-- **ThreatFox** (abuse.ch) — IOC database (C2 servers, campaigns)
-- **VirusTotal** — AV detection aggregator (requires free API key, optional)
+---
 
-**Supported hash types:** MD5, SHA1, SHA256, SHA512 (auto-detected from length)
+#### `ghost_cve` — CVE Lookup
 
-**Verdict logic:**
-- MalwareBazaar or ThreatFox hit → `malicious`
-- VirusTotal 11+ detections → `malicious`
-- VirusTotal 1-10 detections → `suspicious`
-- CIRCL NSRL known → `clean`
-- Nothing found → `unknown`
+Look up a specific CVE by ID or search by keyword. Returns severity, CVSS score, EPSS exploit probability, and CISA KEV (Known Exploited Vulnerabilities) status. **No API key required.**
 
-This capability is currently available as a Python API (`HashLookup.lookup(hash)`) and will be exposed as an MCP tool in a future sprint.
+---
+
+#### `ghost_vuln` — Package Vulnerability Check
+
+Check a package for known vulnerabilities via OSV.dev. Supports PyPI, npm, Go, crates.io, and other ecosystems. **No API key required.**
+
+---
+
+#### `ghost_threat` — Threat Intelligence Feeds
+
+Look up an indicator (URL, IP, domain, hash) across multiple threat feeds: URLhaus, ThreatFox, RansomWatch, and Feodo Tracker. **No API key required.**
+
+---
+
+#### `ghost_cert` — TLS Certificate Inspection
+
+Connect to a host, pull the TLS certificate, and report subject, issuer, expiry, SANs, fingerprint, protocol, cipher suite, key type, chain, and self-signed/expired status. **No API key required.**
+
+---
+
+### 3. Browser Automation
+
+#### `ghost_render` — Headless Chromium Rendering
+
+Render a web page using headless Chromium. Captures the rendered DOM (after JavaScript execution), console.log/error output, and uncaught JS errors. Essential for debugging SPAs (Vue, React, Angular) where raw HTML contains unresolved template syntax. Supports optional JavaScript execution and screenshots. **No API key required** (requires Playwright + Chromium installed).
+
+---
+
+### 4. People Search
+
+#### `ghost_phone` — Phone Intelligence
+
+Phone number validation, carrier lookup, CNAM (caller name) resolution, and reverse-phone search URL generation. Supports international numbers. **Free tier via Veriphone** (1000 lookups/mo). Optional: `GHOST_VERIPHONE_KEY`, `GHOST_TWILIO_SID`/`GHOST_TWILIO_TOKEN`, `GHOST_OPENCNAM_SID`/`GHOST_OPENCNAM_TOKEN`.
+
+---
+
+#### `ghost_email` — Email Intelligence
+
+Email address investigation: reputation scoring (EmailRep), social account enumeration (Holehe-style), professional verification (Hunter.io), and breach history (HIBP). **Partially free.** Optional keys: `GHOST_EMAILREP_KEY`, `GHOST_HUNTER_KEY`, `GHOST_HIBP_KEY`.
+
+---
+
+#### `ghost_username` — Username Enumeration
+
+Check username existence across 20+ social platforms. Uses Maigret/Sherlock-style HTTP probing with status code and content matching. **No API key required.**
+
+---
+
+#### `ghost_people` — People Search URL Generator
+
+IntelTechniques-style URL generator for 15+ people-search sites (Pipl, ThatsThem, Whitepages, TruePeopleSearch, etc.). Generates ready-to-click search URLs from name, location, phone, or email inputs. **No API key required.**
+
+---
+
+#### `ghost_court` — Court Record Search
+
+Search US federal and state court records via the CourtListener REST API. Find cases, opinions, and docket entries by name, keyword, or jurisdiction. **Free registration required.** Key: `GHOST_COURTLISTENER_TOKEN`.
+
+---
+
+#### `ghost_breach` — Breach Database Search
+
+Search breach databases for compromised credentials and exposed data. Aggregates results from Have I Been Pwned, Snusbase, DeHashed, and LeakCheck. **Paid keys required** for full coverage. Keys: `GHOST_HIBP_KEY`, `GHOST_SNUSBASE_KEY`, `GHOST_DEHASHED_EMAIL`/`GHOST_DEHASHED_KEY`, `GHOST_LEAKCHECK_KEY`.
+
+---
+
+#### `ghost_ip` — IP Geolocation & Intelligence
+
+IP address geolocation, ASN lookup, ISP identification, and proxy/VPN/Tor detection via ip-api.com. **No API key required** (free tier: 45 req/min).
+
+---
+
+#### `ghost_vin` — Vehicle Identification
+
+VIN (Vehicle Identification Number) decode, safety recall lookup, and consumer complaint search via NHTSA APIs. Returns make, model, year, plant, and safety history. **No API key required.**
+
+---
+
+#### `ghost_report` — Composite Background Report
+
+Orchestrates multiple ghost tools (phone, email, username, breach, court, IP) into a unified background report for a subject. Generates a structured summary with cross-referenced findings. **No additional API key** (uses keys configured for individual tools).
 
 ---
 
@@ -247,7 +300,7 @@ GhostMCP/
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py              # Entry point: python3 -m src
-│   ├── mcp.py                   # MCP server (4 tools, JSON-RPC stdio)
+│   ├── mcp.py                   # MCP server (20 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations
 │   │   ├── base.py              # SearchResult dataclass, SearchEngine ABC, rate limiter
@@ -261,20 +314,51 @@ GhostMCP/
 │   │   ├── manager.py           # ProxyManager (paranoia → proxy selection)
 │   │   └── fingerprint.py       # Browser header generation by paranoia level
 │   ├── recon/                   # Reconnaissance modules
-│   │   └── hashes.py            # Hash intelligence (CIRCL, MalwareBazaar, ThreatFox, VT)
+│   │   ├── hashes.py            # Hash intelligence (CIRCL, MalwareBazaar, ThreatFox, VT)
+│   │   ├── subdomains.py        # Subdomain enumeration (crt.sh CT + DNS brute)
+│   │   ├── cve.py               # CVE lookup (NVD, EPSS, CISA KEV)
+│   │   ├── vuln.py              # Package vulnerability check (OSV.dev)
+│   │   ├── threat.py            # Threat intel feeds (URLhaus, ThreatFox, Feodo)
+│   │   ├── cert.py              # TLS certificate inspection
+│   │   ├── render.py            # Headless Chromium rendering (Playwright)
+│   │   ├── phone.py             # Phone validation, carrier, CNAM
+│   │   ├── vehicles.py          # VIN decode, recalls, complaints (NHTSA)
+│   │   ├── people.py            # IntelTechniques URL generator
+│   │   ├── email_intel.py       # Email reputation, social, breach
+│   │   ├── username.py          # Username enumeration (20+ sites)
+│   │   ├── court.py             # Court record search (CourtListener)
+│   │   ├── breach.py            # Breach database aggregator
+│   │   ├── report.py            # Composite background report
+│   │   └── ip_intel.py          # IP geolocation, ASN, proxy detection
 │   └── utils/
 │       └── config.py            # ParanoiaLevel enum, Config dataclass
-├── tests/                       # 243 tests, 100% pass rate
-│   ├── conftest.py              # Shared fixtures
-│   ├── test_base.py             # SearchResult, exceptions, rate limiter (16 tests)
-│   ├── test_dorking.py          # Dork builder + templates (33 tests)
-│   ├── test_duckduckgo.py       # DDG Lite parser + search (21 tests)
-│   ├── test_fingerprint.py      # Header generation, all paranoia levels (22 tests)
-│   ├── test_google.py           # Google parser, CAPTCHA detection (21 tests)
-│   ├── test_hashes.py           # Hash detection, verdicts, mocked lookups (29 tests)
-│   ├── test_mcp.py              # MCP server registration + dispatch (12 tests)
-│   ├── test_proxy.py            # Proxy selection, Tor health (19 tests)
-│   └── test_serper.py           # Serper API parsing, mocked HTTP (22 tests)
+├── tests/                       # 749 unit tests + 35 integration tests
+│   ├── conftest.py              # Shared fixtures, markers
+│   ├── test_base.py             # SearchResult, exceptions, rate limiter
+│   ├── test_dorking.py          # Dork builder + templates
+│   ├── test_duckduckgo.py       # DDG Lite parser + search
+│   ├── test_fingerprint.py      # Header generation, all paranoia levels
+│   ├── test_google.py           # Google parser, CAPTCHA detection
+│   ├── test_hashes.py           # Hash detection, verdicts, mocked lookups
+│   ├── test_mcp.py              # MCP server registration + dispatch
+│   ├── test_proxy.py            # Proxy selection, Tor health
+│   ├── test_serper.py           # Serper API parsing, mocked HTTP
+│   ├── test_subdomains.py       # CT log + DNS brute force
+│   ├── test_cve.py              # CVE lookup, EPSS, KEV
+│   ├── test_vuln.py             # OSV.dev package checks
+│   ├── test_threat.py           # Threat feed lookups
+│   ├── test_cert.py             # TLS inspection
+│   ├── test_render.py           # Headless rendering
+│   ├── test_phone.py            # Phone validation, carrier, CNAM
+│   ├── test_vehicles.py         # VIN decode, NHTSA APIs
+│   ├── test_people.py           # People search URL generation
+│   ├── test_email_intel.py      # Email intelligence
+│   ├── test_username.py         # Username enumeration
+│   ├── test_court.py            # Court record search
+│   ├── test_breach.py           # Breach database queries
+│   ├── test_report.py           # Composite report generation
+│   ├── test_ip_intel.py         # IP geolocation + ASN
+│   └── test_integration.py      # 35 integration tests (live free APIs)
 ├── docs/
 │   ├── design/                  # Architecture and capability docs
 │   ├── research/                # OSINT API research
@@ -288,6 +372,8 @@ GhostMCP/
 
 ## Environment Variables
 
+### Core Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GHOST_PARANOIA` | `casual` | Default paranoia level |
@@ -297,28 +383,52 @@ GhostMCP/
 | `GHOST_ENGINES` | `duckduckgo` | Comma-separated engine preference |
 | `GHOST_TOR_PROXY` | `socks5://127.0.0.1:9050` | Tor SOCKS5 address |
 | `GHOST_OUTPUT` | `text` | Output format (`text`, `json`) |
+
+### API Keys — Search & Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SERPER_API_KEY` | (none) | Serper.dev API key (enables Google-quality results) |
 | `VT_API_KEY` | (none) | VirusTotal API key (enables AV detection lookups) |
+
+### API Keys — People Search
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GHOST_VERIPHONE_KEY` | (none) | Veriphone API key (1000 free lookups/mo) |
+| `GHOST_TWILIO_SID` | (none) | Twilio Account SID (CNAM caller name lookup) |
+| `GHOST_TWILIO_TOKEN` | (none) | Twilio Auth Token |
+| `GHOST_OPENCNAM_SID` | (none) | OpenCNAM Account SID |
+| `GHOST_OPENCNAM_TOKEN` | (none) | OpenCNAM Auth Token |
+| `GHOST_EMAILREP_KEY` | (none) | EmailRep.io API key (free registration) |
+| `GHOST_HUNTER_KEY` | (none) | Hunter.io API key ($49/mo) |
+| `GHOST_HIBP_KEY` | (none) | Have I Been Pwned API key ($3.50/mo) |
+| `GHOST_COURTLISTENER_TOKEN` | (none) | CourtListener API token (free registration) |
+| `GHOST_SNUSBASE_KEY` | (none) | Snusbase API key ($27/mo) |
+| `GHOST_DEHASHED_EMAIL` | (none) | DeHashed account email |
+| `GHOST_DEHASHED_KEY` | (none) | DeHashed API key ($15-30/mo) |
+| `GHOST_LEAKCHECK_KEY` | (none) | LeakCheck API key ($10/mo) |
 
 ---
 
 ## API Key Configuration
 
-All API keys are **optional**. Core functionality works without any keys.
+All API keys are **optional**. Core functionality (search, dorking, fetch, recon, CVE, vuln, threat, cert, render, IP, VIN, username, people) works without any keys.
 
 | Key | Service | Free Tier | What It Enables |
 |-----|---------|-----------|-----------------|
 | `SERPER_API_KEY` | [Serper.dev](https://serper.dev) | 2,500 queries free | Google-quality structured search results |
 | `VT_API_KEY` | [VirusTotal](https://virustotal.com) | 4 req/min free | AV detection scores for hash lookups |
-
-**Future keys (planned phases):**
-
-| Key | Service | What It Will Enable |
-|-----|---------|---------------------|
-| `OTX_API_KEY` | AlienVault OTX | Community threat intelligence feeds |
-| `HIBP_API_KEY` | Have I Been Pwned | Breach monitoring |
-| `SHODAN_API_KEY` | Shodan | Internet-wide device/service search |
-| `LEAKIX_API_KEY` | LeakIX | Exposed service discovery |
+| `GHOST_VERIPHONE_KEY` | [Veriphone](https://veriphone.io) | 1,000/mo free | Phone number validation + carrier |
+| `GHOST_EMAILREP_KEY` | [EmailRep.io](https://emailrep.io) | Free registration | Email reputation scoring |
+| `GHOST_COURTLISTENER_TOKEN` | [CourtListener](https://www.courtlistener.com) | Free registration | US court record search |
+| `GHOST_HIBP_KEY` | [Have I Been Pwned](https://haveibeenpwned.com/API/Key) | $3.50/mo | Breach history lookups |
+| `GHOST_HUNTER_KEY` | [Hunter.io](https://hunter.io) | $49/mo | Professional email verification |
+| `GHOST_SNUSBASE_KEY` | [Snusbase](https://snusbase.com) | $27/mo | Breach credential search |
+| `GHOST_DEHASHED_KEY` | [DeHashed](https://dehashed.com) | $15-30/mo | Breach database queries |
+| `GHOST_LEAKCHECK_KEY` | [LeakCheck](https://leakcheck.io) | $10/mo | Leak database lookups |
+| `GHOST_TWILIO_SID` | [Twilio](https://twilio.com) | Pay-per-use | CNAM caller name resolution |
+| `GHOST_OPENCNAM_SID` | [OpenCNAM](https://opencnam.com) | Pay-per-use | CNAM caller name (alternative) |
 
 ---
 
@@ -326,30 +436,41 @@ All API keys are **optional**. Core functionality works without any keys.
 
 ```bash
 cd GhostMCP
-python3 -m pytest tests/ -v          # Full suite (243 tests)
-python3 -m pytest tests/ -v -x       # Stop on first failure
-python3 -m pytest tests/test_dorking.py -v  # Single module
+
+# Unit tests (749 tests, all mocked, no network)
+python3 -m pytest tests/ -v
+
+# Integration tests (35 tests, hits live free APIs)
+python3 -m pytest tests/ -v -m integration
+
+# Paid API tests (13 tests, requires keys to be set)
+python3 -m pytest tests/ -v -m paid
+
+# All tests together
+python3 -m pytest tests/ -v --run-all
+
+# Stop on first failure
+python3 -m pytest tests/ -v -x
+
+# Single module
+python3 -m pytest tests/test_phone.py -v
 ```
 
-Test coverage by module:
+### Test Markers
 
-| Module | Tests | What's Tested |
-|--------|-------|---------------|
-| `engines/base.py` | 16 | SearchResult creation, exceptions, async rate limiter timing |
-| `engines/duckduckgo.py` | 21 | Lite HTML parser, DDG link filtering, mocked search |
-| `engines/google.py` | 21 | SERP parsing, CAPTCHA/consent detection, mocked HTTP |
-| `engines/serper.py` | 22 | API response parsing, key detection, error handling |
-| `dorking/` | 33 | All operators, template rendering, edge cases |
-| `recon/hashes.py` | 29 | Hash type detection, file hashing, verdict logic, mocked API lookups |
-| `proxy/fingerprint.py` | 22 | Header generation for all paranoia levels |
-| `proxy/manager.py` | 19 | Proxy selection, Tor health checks |
-| `mcp.py` | 12 | Tool registration, JSON-RPC dispatch, error handling |
+| Marker | Count | Description |
+|--------|-------|-------------|
+| (default) | 749 | Unit tests — fully mocked, no network, run everywhere |
+| `integration` | 35 | Integration tests — hit live free APIs (crt.sh, NVD, ip-api, NHTSA) |
+| `paid` | 13 | Paid API tests — require keys, skipped if env vars not set |
+
+Tests are configured in `conftest.py` to skip `integration` and `paid` markers by default. Use `-m integration` or `-m paid` to opt in.
 
 ---
 
 ## Design Principles
 
-- **Free by default** — All core functionality works without API keys
+- **Free by default** — All core functionality works without API keys (14 of 20 tools need no keys)
 - **No footprint** — Stealth headers, proxy support, Tor integration
 - **Standalone** — Runs independently, but callable from any MCP client
 - **Modular engines** — Add new search engines without touching core
@@ -357,6 +478,7 @@ Test coverage by module:
 - **Structured output** — Title, URL, snippet, metadata — ready for AI consumption
 - **Mandatory provenance** — Every result includes source engine and timestamp
 - **Dorking is first-class** — Not an afterthought, a core capability
+- **Graceful degradation** — Tools work with whatever keys are available, report what's missing
 
 ---
 
@@ -384,24 +506,30 @@ GhostMCP    ForensicsMCP    Unimind
 
 See [`docs/design/CAPABILITIES.md`](docs/design/CAPABILITIES.md) for the full 17-phase roadmap and [`docs/design/PHASE_ESTIMATES.md`](docs/design/PHASE_ESTIMATES.md) for effort estimates.
 
-### What's Built (Sprints 0, 1, 2.5b)
+### What's Built
 
 | Sprint | Capability | Status |
 |--------|-----------|--------|
 | 0 | DuckDuckGo Lite engine, proxy manager, fingerprint rotation, CLI | Done |
 | 1 | Google scraper, Serper API, dorking builder + 12 templates, MCP interface | Done |
+| 2 | Subdomain enumeration (crt.sh CT + DNS brute force) | Done |
+| 2.5 | Vulnerability intelligence (NVD, OSV, CISA KEV, EPSS) | Done |
 | 2.5b | Hash intelligence (CIRCL, MalwareBazaar, ThreatFox, VirusTotal) | Done |
+| 2c | TLS certificate inspection (cert chain, expiry, SANs, ciphers) | Done |
+| 3 | Headless Chromium rendering (Playwright, JS execution, console capture) | Done |
+| 3.5 | Threat intelligence feeds (URLhaus, ThreatFox, RansomWatch, Feodo) | Done |
+| 4 | Phone intelligence (validation, carrier, CNAM, reverse lookup) | Done |
+| 5 | People search (IntelTechniques URL gen, VIN/NHTSA, IP geolocation) | Done |
+| 6 | Email + username intelligence (EmailRep, Holehe, Hunter, enumeration) | Done |
+| 7 | Breach + court records (HIBP, Snusbase, DeHashed, CourtListener) | Done |
 
 ### What's Next
 
 | Sprint | Capability | Description |
 |--------|-----------|-------------|
-| 2 | Subdomain enumeration | crt.sh certificate transparency + DNS brute force |
-| 2.5 | Vulnerability intelligence | NVD, OSV, CISA KEV, EPSS, ExploitDB |
-| 2c | TLS certificate inspection | Connect, parse cert chain, expiry, SANs, ciphers |
-| 3 | Browser automation (Playwright) | Tier 1 fallback for JS-heavy sites |
-| 3.5 | Threat intelligence feeds | Abuse.ch, AlienVault OTX, RansomWatch |
-| 4 | Domain reputation | URLhaus, PhishTank, AbuseIPDB, WHOIS age |
+| 8 | Domain reputation | URLhaus, PhishTank, AbuseIPDB, WHOIS age |
+| 9 | Social media OSINT | Profile scraping, activity timelines |
+| 10 | Report export | PDF/HTML report generation with evidence chains |
 
 ---
 
@@ -410,6 +538,8 @@ See [`docs/design/CAPABILITIES.md`](docs/design/CAPABILITIES.md) for the full 17
 - **DDG rate limiting:** DuckDuckGo throttles aggressively (~10s cooldown after burst requests). The engine handles this with 202 retry + exponential backoff (5s/10s/15s), but rapid successive searches may return empty results. The `min_delay=2.0` setting prevents this in normal use.
 - **Google CAPTCHA:** Google HTML scraping triggers CAPTCHAs under heavy use. Install `curl_cffi` for better stealth, or use Serper API for reliable Google results.
 - **Python 3.9:** Tested on Python 3.9+. Some type hints use `X | Y` syntax that requires `from __future__ import annotations` (already included).
+- **Playwright install:** `ghost_render` requires `playwright install chromium` — this downloads ~150MB on first run. Tool returns a clear error if Chromium is not installed.
+- **Breach tools:** `ghost_breach` gracefully degrades — it queries whichever services have keys configured and reports which sources were skipped.
 
 ---
 
