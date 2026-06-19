@@ -215,6 +215,7 @@ async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
         _bridge_pending.pop(req_id, None)
 
 from .engines.base import SearchResult, SearchEngineError
+from .engines.brave import BraveEngine
 from .engines.duckduckgo import DuckDuckGoEngine
 from .engines.google import GoogleEngine
 from .engines.serper import SerperEngine
@@ -413,7 +414,7 @@ def _format_results(results: list[SearchResult]) -> str:
         "query": {"type": "string", "description": "Search query string."},
         "engine": {
             "type": "string",
-            "description": "Engine: auto, serper, google, duckduckgo. Auto tries serper -> google -> duckduckgo.",
+            "description": "Engine: auto, serper, brave, google, duckduckgo. Auto tries serper -> brave -> google -> duckduckgo.",
             "default": "auto",
         },
         "paranoia": {
@@ -445,6 +446,10 @@ async def ghost_search(
         if serper.available:
             engines_to_try.append(serper)
 
+        brave = BraveEngine(proxy=proxy)
+        if brave.available:
+            engines_to_try.append(brave)
+
         engines_to_try.append(GoogleEngine(proxy=proxy, paranoia=paranoia))
         engines_to_try.append(DuckDuckGoEngine(proxy=proxy))
 
@@ -465,6 +470,7 @@ async def ghost_search(
 
     eng_map = {
         "serper": lambda: SerperEngine(proxy=proxy),
+        "brave": lambda: BraveEngine(proxy=proxy),
         "google": lambda: GoogleEngine(proxy=proxy, paranoia=paranoia),
         "duckduckgo": lambda: DuckDuckGoEngine(proxy=proxy),
     }
