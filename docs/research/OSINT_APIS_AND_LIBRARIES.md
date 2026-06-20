@@ -246,3 +246,72 @@ pytest-asyncio>=0.23
 8. **Build proxy rotation ourselves** — no good library exists, our orchestration layer
 9. **Wappalyzer rules local** — no API call needed for tech detection, runs offline
 10. **Paranoia levels in config** — one setting controls entire request pipeline behavior
+
+---
+
+## Search Engine APIs (2025-2026 Landscape)
+
+**Last updated:** 2026-06-20
+**Sources:** Brave Search results, Firecrawl (best-web-search-apis), ScrapingBee (best-ai-search-api), KDnuggets (7-free-web-search-apis-for-ai-agents)
+
+### Free Tier APIs (JSON, no CAPTCHAs)
+
+| Engine | Free Tier | Paid Pricing | Index Type | Sign Up |
+|---|---|---|---|---|
+| **Brave Search** | 2,000/month | $5/1K | Independent (30B+ pages) | https://brave.com/search/api/ |
+| **Serper** | 2,500/month | $50/50K | Google results (JSON) | https://serper.dev/ |
+| **Bing Search v7** | 1,000/month | $7/1K | Microsoft/Bing index | Azure Marketplace |
+| **Google Custom Search** | 100/day (~3K/mo) | $5/1K | Google (scoped) | https://developers.google.com/custom-search/ |
+| **SerpApi** | 100/month | $75/mo (5K) | Google + 100 engines | https://serpapi.com/ |
+| **SearchApi** | 100/month | $50/mo | Google, Bing, Baidu, Amazon | https://www.searchapi.io/ |
+| **Tavily** | 1,000/month | $100/10K | AI-optimized | https://tavily.com/ |
+| **Exa** | 1,000/month | $20/10K | Neural/semantic | https://exa.ai/ |
+| **You.com** | ~100/day | TBD | Independent + AI mode | https://you.com/search-api |
+
+### AI-Native Search APIs (designed for LLM/agent use)
+
+| Engine | What Makes It Different | Best For |
+|---|---|---|
+| **Tavily** | Returns AI-ready content: summarized answers + raw sources + relevance scores. Built specifically for LLM tool use. | Grounding LLM responses with cited web data |
+| **Exa** | Neural/semantic search — you describe what you want conceptually, not keywords. Finds similar pages. | Research, finding related work, concept exploration |
+| **Perplexity API** | Search + synthesis in one call. Returns a written answer with inline citations. | Deep research questions where you want an answer, not links |
+| **You.com Research** | Structured snippets optimized for AI consumption. Research mode with sources. | Factual lookups, current events |
+
+### Scrapers (free unlimited, CAPTCHA risk)
+
+| Engine | Bot Detection Level | CAPTCHAs? | Notes |
+|---|---|---|---|
+| **Google** | High | Yes (reCAPTCHA) | Most aggressive; curl_cffi + stealth helps |
+| **DuckDuckGo** | Medium | No (202 throttle) | Blocks via HTTP 202, retryable |
+| **Bing** | Medium | Sometimes | Less aggressive than Google |
+| **Yandex** | Low | Rarely | Russian search, good for diversity |
+| **Startpage** | Medium | Sometimes | Google results via privacy proxy |
+
+### GhostMCP Integration Status
+
+| Engine | Status | Module |
+|---|---|---|
+| Brave | **Implemented** | src/engines/brave.py |
+| Serper | **Implemented** | src/engines/serper.py |
+| Google (scraper) | **Implemented** | src/engines/google.py |
+| DuckDuckGo (scraper) | **Implemented** | src/engines/duckduckgo.py |
+| Bing API | **Planned** | — |
+| Bing scraper | **Planned** | — |
+| Google Custom Search | **Planned** | — |
+| Tavily | **Evaluating** | — |
+| Exa | **Evaluating** | — |
+
+### Maximum Free Search Budget
+
+Stacking all free API tiers (round-robin via engine rotator):
+
+| Engine | Monthly Free | Running Total |
+|---|---|---|
+| Brave | 2,000 | 2,000 |
+| Serper | 2,500 | 4,500 |
+| Bing v7 | 1,000 | 5,500 |
+| Google Custom | ~3,000 | 8,500 |
+| Scrapers (fallback) | ∞ (risky) | — |
+
+**Total CAPTCHA-free searches: 8,500/month** before touching any scraper.
+
