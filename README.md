@@ -12,7 +12,7 @@ Designed as both a **development workflow accelerator** (find answers faster) an
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
 
-**v0.4.0** — 20 tools, 749 unit tests + 35 integration tests, all passing.
+**v0.5.0** — 24 tools, 1,011 unit tests + 35 integration tests, all passing.
 
 ---
 
@@ -41,7 +41,7 @@ pip install curl_cffi
 pip install playwright && playwright install chromium
 
 # Verify it works
-python3 -m pytest tests/ -v    # 749 unit tests, all passing
+python3 -m pytest tests/ -v    # 1,011 unit tests, all passing
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
 ```
 
@@ -95,7 +95,7 @@ Restart your MCP client after adding the configuration.
 
 ## MCP Tools
 
-GhostMCP exposes 20 tools via the Model Context Protocol, organized into four categories:
+GhostMCP exposes 24 tools via the Model Context Protocol, organized into four categories:
 
 ---
 
@@ -181,6 +181,12 @@ Passive reconnaissance on a target domain. Runs dorking-based modules to discove
 
 ---
 
+#### `ghost_api` — Passive API Surface Discovery
+
+Probes Swagger/OpenAPI endpoints, GraphQL introspection, robots.txt, OIDC discovery, security.txt, and well-known paths. Identifies framework and CORS policy. **No API key required.**
+
+---
+
 ### 2. Security Intelligence
 
 #### `ghost_hash` — Hash Intelligence
@@ -210,6 +216,18 @@ Look up an indicator (URL, IP, domain, hash) across multiple threat feeds: URLha
 #### `ghost_cert` — TLS Certificate Inspection
 
 Connect to a host, pull the TLS certificate, and report subject, issuer, expiry, SANs, fingerprint, protocol, cipher suite, key type, chain, and self-signed/expired status. **No API key required.**
+
+---
+
+#### `ghost_headers` — HTTP Security Header Analysis
+
+Analyze HTTP security headers of a URL. Grades CSP, HSTS, X-Frame-Options, CORS policy, and more. Returns A+ through F grade with detailed findings and recommendations. **No API key required.**
+
+---
+
+#### `ghost_dns` — DNS Reconnaissance
+
+Comprehensive DNS reconnaissance via DNS-over-HTTPS (zero dependencies). SPF/DMARC/DKIM email security analysis, dangling CNAME detection, SRV service discovery, SaaS provider identification from TXT records. **No API key required.**
 
 ---
 
@@ -265,6 +283,12 @@ IP address geolocation, ASN lookup, ISP identification, and proxy/VPN/Tor detect
 
 ---
 
+#### `ghost_asn` — BGP/ASN Network Reconnaissance
+
+BGP/ASN network infrastructure reconnaissance. Query by ASN number, IP address, or organization name. Returns announced prefixes, peers, IX presence, and related ASNs via BGPView API. **No API key required.**
+
+---
+
 #### `ghost_vin` — Vehicle Identification
 
 VIN (Vehicle Identification Number) decode, safety recall lookup, and consumer complaint search via NHTSA APIs. Returns make, model, year, plant, and safety history. **No API key required.**
@@ -300,7 +324,7 @@ GhostMCP/
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py              # Entry point: python3 -m src
-│   ├── mcp.py                   # MCP server (20 tools, JSON-RPC stdio)
+│   ├── mcp.py                   # MCP server (24 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations
 │   │   ├── base.py              # SearchResult dataclass, SearchEngine ABC, rate limiter
@@ -330,9 +354,13 @@ GhostMCP/
 │   │   ├── breach.py            # Breach database aggregator
 │   │   ├── report.py            # Composite background report
 │   │   └── ip_intel.py          # IP geolocation, ASN, proxy detection
+│   │   ├── headers.py           # HTTP security header analysis
+│   │   ├── dns_intel.py         # DNS reconnaissance (DoH, SPF/DMARC/DKIM)
+│   │   ├── api_discovery.py     # Passive API surface discovery
+│   │   └── asn.py               # BGP/ASN network reconnaissance
 │   └── utils/
 │       └── config.py            # ParanoiaLevel enum, Config dataclass
-├── tests/                       # 749 unit tests + 35 integration tests
+├── tests/                       # 1,011 unit tests + 35 integration tests
 │   ├── conftest.py              # Shared fixtures, markers
 │   ├── test_base.py             # SearchResult, exceptions, rate limiter
 │   ├── test_dorking.py          # Dork builder + templates
@@ -358,6 +386,10 @@ GhostMCP/
 │   ├── test_breach.py           # Breach database queries
 │   ├── test_report.py           # Composite report generation
 │   ├── test_ip_intel.py         # IP geolocation + ASN
+│   ├── test_headers.py          # HTTP security header analysis
+│   ├── test_dns_intel.py        # DNS reconnaissance
+│   ├── test_api_discovery.py    # API surface discovery
+│   ├── test_asn.py              # BGP/ASN reconnaissance
 │   └── test_integration.py      # 35 integration tests (live free APIs)
 ├── docs/
 │   ├── design/                  # Architecture and capability docs
@@ -437,7 +469,7 @@ All API keys are **optional**. Core functionality (search, dorking, fetch, recon
 ```bash
 cd GhostMCP
 
-# Unit tests (749 tests, all mocked, no network)
+# Unit tests (1,011 tests, all mocked, no network)
 python3 -m pytest tests/ -v
 
 # Integration tests (35 tests, hits live free APIs)
@@ -460,7 +492,7 @@ python3 -m pytest tests/test_phone.py -v
 
 | Marker | Count | Description |
 |--------|-------|-------------|
-| (default) | 749 | Unit tests — fully mocked, no network, run everywhere |
+| (default) | 1,011 | Unit tests — fully mocked, no network, run everywhere |
 | `integration` | 35 | Integration tests — hit live free APIs (crt.sh, NVD, ip-api, NHTSA) |
 | `paid` | 13 | Paid API tests — require keys, skipped if env vars not set |
 
@@ -470,7 +502,7 @@ Tests are configured in `conftest.py` to skip `integration` and `paid` markers b
 
 ## Design Principles
 
-- **Free by default** — All core functionality works without API keys (14 of 20 tools need no keys)
+- **Free by default** — All core functionality works without API keys (18 of 24 tools need no keys)
 - **No footprint** — Stealth headers, proxy support, Tor integration
 - **Standalone** — Runs independently, but callable from any MCP client
 - **Modular engines** — Add new search engines without touching core

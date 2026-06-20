@@ -238,6 +238,10 @@ from .recon.court import CourtSearchResult, CourtCase, court_search
 from .recon.breach import BreachSearchResult, BreachRecord, breach_search
 from .recon.report import BackgroundReport, generate_report
 from .recon.ip_intel import IPReport, ip_lookup
+from .recon.dns_intel import DNSReport, dns_lookup
+from .recon.asn import ASNReport, asn_lookup
+from .recon.headers import HeadersReport, analyze_headers, grade_headers
+from .recon.api_discovery import APIDiscoveryReport, api_discover
 from .utils.config import ParanoiaLevel
 
 
@@ -1882,6 +1886,322 @@ async def ghost_ip(ip: str) -> str:
     return _format_ip_report(report)
 
 
+# ---------------------------------------------------------------------------
+# DNS intelligence tool
+# ---------------------------------------------------------------------------
+
+def _format_dns_report(r: DNSReport) -> str:
+    """Format a DNSReport into readable text."""
+    if r.error:
+        return f"DNS lookup error: {r.error}"
+
+    lines = [f"=== DNS Intelligence: {r.domain} ===", ""]
+
+    # Core records
+    if r.a_records:
+        lines.append(f"A Records ({len(r.a_records)}):")
+        for ip in r.a_records:
+            lines.append(f"  {ip}")
+        lines.append("")
+
+    if r.aaaa_records:
+        lines.append(f"AAAA Records ({len(r.aaaa_records)}):")
+        for ip in r.aaaa_records:
+            lines.append(f"  {ip}")
+        lines.append("")
+
+    if r.cname_records:
+        lines.append(f"CNAME Records ({len(r.cname_records)}):")
+        for cn in r.cname_records:
+            lines.append(f"  {cn}")
+        lines.append("")
+
+    if r.mx_records:
+        lines.append(f"MX Records ({len(r.mx_records)}):")
+        for mx in r.mx_records:
+            lines.append(f"  [{mx['priority']}] {mx['host']}")
+        lines.append("")
+
+    if r.ns_records:
+        lines.append(f"NS Records ({len(r.ns_records)}):")
+        for ns in r.ns_records:
+            lines.append(f"  {ns}")
+        lines.append("")
+
+    if r.txt_records:
+        lines.append(f"TXT Records ({len(r.txt_records)}):")
+        for txt in r.txt_records:
+            lines.append(f"  {txt}")
+        lines.append("")
+
+    if r.srv_records:
+        lines.append(f"SRV Records ({len(r.srv_records)}):")
+        for srv in r.srv_records:
+            lines.append(
+                f"  {srv['service']}.{srv['protocol']} -> "
+                f"{srv['target']}:{srv['port']} "
+                f"(pri={srv['priority']} w={srv['weight']})"
+            )
+        lines.append("")
+
+    if r.caa_records:
+        lines.append(f"CAA Records ({len(r.caa_records)}):")
+        for caa in r.caa_records:
+            lines.append(f"  {caa}")
+        lines.append("")
+
+    if r.soa_record:
+        lines.append(f"SOA: {r.soa_record}")
+        lines.append("")
+
+    # Email security
+    lines.append(f"Email Security Grade: {r.email_security_grade}")
+    lines.append("")
+
+    if r.spf:
+        lines.append(f"SPF: {r.spf.get('record', 'N/A')}")
+        lines.append(f"  Valid: {r.spf.get('valid', 'N/A')}")
+        lines.append(f"  DNS Lookups: {r.spf.get('mechanism_count', 0)}/10")
+        if r.spf.get("includes"):
+            lines.append(f"  Includes: {', '.join(r.spf['includes'])}")
+        for issue in r.spf.get("issues", []):
+            lines.append(f"  ** {issue}")
+        lines.append("")
+
+    if r.dmarc:
+        lines.append(f"DMARC: {r.dmarc.get('record', 'N/A')}")
+        lines.append(f"  Policy: {r.dmarc.get('policy', 'N/A')}")
+        lines.append(f"  Pct: {r.dmarc.get('pct', 'N/A')}%")
+        if r.dmarc.get("rua"):
+            lines.append(f"  Report URI: {r.dmarc['rua']}")
+        for issue in r.dmarc.get("issues", []):
+            lines.append(f"  ** {issue}")
+        lines.append("")
+
+    if r.dkim:
+        if r.dkim.get("found"):
+            lines.append(f"DKIM: Found (selector={r.dkim['selector']})")
+            lines.append(f"  {r.dkim.get('record', '')[:100]}...")
+        else:
+            lines.append("DKIM: Not found")
+            for issue in r.dkim.get("issues", []):
+                lines.append(f"  ** {issue}")
+        lines.append("")
+
+    # Dangling CNAMEs
+    if r.dangling_cnames:
+        lines.append(f"Dangling CNAMEs ({len(r.dangling_cnames)}):")
+        for dc in r.dangling_cnames:
+            lines.append(
+                f"  {dc['cname']} -> {dc['target']} "
+                f"[{dc['status']}] RISK: {dc['risk'].upper()}"
+            )
+        lines.append("")
+
+    # Service discovery
+    if r.service_discovery:
+        lines.append(f"Services Discovered ({len(r.service_discovery)}):")
+        for svc in r.service_discovery:
+            lines.append(f"  [{svc['from_record_type']}] {svc['service']}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_dns",
+    description=(
+        "Comprehensive DNS reconnaissance on a domain. Enumerates all record types "
+        "(A, AAAA, MX, NS, CNAME, TXT, SRV, CAA, SOA) via DNS-over-HTTPS. Analyzes "
+        "email security posture (SPF/DMARC/DKIM grading A-F), detects dangling CNAMEs "
+        "for subdomain takeover, and discovers SaaS services from TXT/SRV records."
+    ),
+    parameters={
+        "domain": {
+            "type": "string",
+            "description": "Target domain to investigate (e.g. example.com).",
+        },
+    },
+)
+async def ghost_dns(domain: str) -> str:
+    """Comprehensive DNS reconnaissance on a domain."""
+    if not domain:
+        return "Error: domain is required."
+    report = await dns_lookup(domain)
+    return _format_dns_report(report)
+
+
+# ---------------------------------------------------------------------------
+# ASN / BGP infrastructure tool
+# ---------------------------------------------------------------------------
+
+def _format_asn_report(r: ASNReport) -> str:
+    """Format an ASNReport into readable text."""
+    if r.error:
+        return f"ASN lookup error: {r.error}"
+
+    lines: list[str] = [f"=== ASN Intelligence: AS{r.asn} ===", ""]
+
+    if r.asn_name:
+        lines.append(f"Name:           {r.asn_name}")
+    if r.description:
+        lines.append(f"Description:    {r.description}")
+    if r.country_code:
+        lines.append(f"Country:        {r.country_code}")
+    if r.rir:
+        lines.append(f"RIR:            {r.rir}")
+    if r.allocation_date:
+        lines.append(f"Allocated:      {r.allocation_date}")
+    if r.abuse_contact:
+        lines.append(f"Abuse Contact:  {r.abuse_contact}")
+
+    lines.append("")
+    lines.append(f"IPv4 Prefixes:  {r.prefix_count_v4}")
+    lines.append(f"IPv6 Prefixes:  {r.prefix_count_v6}")
+
+    if r.prefixes_v4:
+        lines.append("")
+        lines.append("--- IPv4 Prefixes ---")
+        for p in r.prefixes_v4[:20]:
+            desc = f" ({p['description']})" if p.get("description") else ""
+            lines.append(f"  {p['prefix']}{desc}")
+        if len(r.prefixes_v4) > 20:
+            lines.append(f"  ... and {len(r.prefixes_v4) - 20} more")
+
+    if r.prefixes_v6:
+        lines.append("")
+        lines.append("--- IPv6 Prefixes ---")
+        for p in r.prefixes_v6[:10]:
+            desc = f" ({p['description']})" if p.get("description") else ""
+            lines.append(f"  {p['prefix']}{desc}")
+        if len(r.prefixes_v6) > 10:
+            lines.append(f"  ... and {len(r.prefixes_v6) - 10} more")
+
+    if r.upstream_peers:
+        lines.append("")
+        lines.append(f"--- Upstream Peers ({len(r.upstream_peers)}) ---")
+        for p in r.upstream_peers[:15]:
+            lines.append(f"  AS{p['asn']} {p['name']} — {p['description']}")
+
+    if r.downstream_peers:
+        lines.append("")
+        lines.append(f"--- Downstream Peers ({len(r.downstream_peers)}) ---")
+        for p in r.downstream_peers[:15]:
+            lines.append(f"  AS{p['asn']} {p['name']} — {p['description']}")
+
+    if r.ix_presence:
+        lines.append("")
+        lines.append(f"--- IX Presence ({len(r.ix_presence)}) ---")
+        for ix in r.ix_presence[:15]:
+            speed = f" ({ix['speed']}Mbps)" if ix.get("speed") else ""
+            lines.append(f"  {ix['name']} — {ix['city']}, {ix['country']}{speed}")
+
+    if r.investigation_urls:
+        lines.append("")
+        lines.append("Investigation URLs:")
+        for name, url in r.investigation_urls.items():
+            lines.append(f"  {name}: {url}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_asn",
+    description=(
+        "Look up BGP/ASN network infrastructure: announced prefixes, upstream/downstream "
+        "peers, IX presence, RIR allocation, and abuse contacts. Accepts an ASN number "
+        "(e.g. AS15169), IP address, or organisation name. Uses free BGPView API."
+    ),
+    parameters={
+        "query": {
+            "type": "string",
+            "description": "ASN number (e.g. 15169 or AS15169), IP address, or organisation name.",
+        },
+        "query_type": {
+            "type": "string",
+            "description": 'Query type: "asn", "ip", or "org". Auto-detected if empty.',
+            "default": "",
+        },
+    },
+)
+async def ghost_asn(query: str, query_type: str = "") -> str:
+    """Look up BGP/ASN network infrastructure."""
+    if not query:
+        return "Error: query is required."
+    report = await asn_lookup(query, query_type=query_type)
+    return _format_asn_report(report)
+
+
+def _format_headers_report(r: HeadersReport) -> str:
+    """Format a HeadersReport into readable text."""
+    if r.error:
+        return f"Header analysis error: {r.error}"
+
+    lines: list[str] = []
+    lines.append(f"=== HTTP Security Headers: {r.url} ===")
+    lines.append(f"Grade: {r.grade} ({r.score}/100)")
+    lines.append("")
+
+    # Server fingerprint
+    if r.server:
+        lines.append(f"Server:        {r.server}")
+    if r.x_powered_by:
+        lines.append(f"X-Powered-By:  {r.x_powered_by}")
+    if r.server or r.x_powered_by:
+        lines.append("")
+
+    # Present headers
+    if r.headers_present:
+        lines.append(f"Headers Present ({len(r.headers_present)}):")
+        for name, info in r.headers_present.items():
+            lines.append(f"  {name}: {info['score']}/{info['max']} — {info.get('detail', info.get('value', ''))}")
+        lines.append("")
+
+    # Missing headers
+    if r.headers_missing:
+        lines.append(f"Headers Missing ({len(r.headers_missing)}):")
+        for name in r.headers_missing:
+            lines.append(f"  - {name}")
+        lines.append("")
+
+    # CORS analysis
+    if r.cors and r.cors.get("allow_origin"):
+        lines.append("CORS:")
+        for k, v in r.cors.items():
+            if k in ("wildcard_origin", "wildcard_with_credentials") and not v:
+                continue
+            lines.append(f"  {k}: {v}")
+        lines.append("")
+
+    # Warnings
+    if r.warnings:
+        lines.append(f"Warnings ({len(r.warnings)}):")
+        for w in r.warnings:
+            lines.append(f"  ! {w}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_headers",
+    description=(
+        "Analyze HTTP security headers of a URL. Grades headers A+ through F, "
+        "checks CSP, HSTS, CORS, X-Frame-Options, Permissions-Policy, and more. "
+        "Detects server fingerprints and flags misconfigurations."
+    ),
+    parameters={
+        "url": {"type": "string", "description": "URL to analyze."},
+    },
+)
+async def ghost_headers(url: str) -> str:
+    """Analyze HTTP security headers and grade them."""
+    if not url:
+        return "Error: url is required."
+    report = await analyze_headers(url)
+    return _format_headers_report(report)
+
+
 def _format_background_report(r: BackgroundReport) -> str:
     """The report module already generates markdown — just return it."""
     return r.report_text
@@ -1976,6 +2296,131 @@ async def ghost_report(
         people_urls=results.get("people"),
     )
     return _format_background_report(report)
+
+
+# ---------------------------------------------------------------------------
+# API surface discovery tool
+# ---------------------------------------------------------------------------
+
+def _format_api_discovery_report(r: APIDiscoveryReport) -> str:
+    """Format an APIDiscoveryReport into readable text."""
+    if r.error:
+        return f"API Discovery error for {r.url}: {r.error}"
+
+    lines: list[str] = []
+    lines.append(f"=== API Surface Discovery: {r.url} ===")
+    lines.append("")
+
+    # OpenAPI / Swagger
+    if r.openapi_found:
+        lines.append(f"[OpenAPI] Found: {r.openapi_url}")
+        lines.append(f"  Version:    {r.openapi_version}")
+        if r.openapi_title:
+            lines.append(f"  Title:      {r.openapi_title}")
+        lines.append(f"  Endpoints:  {r.openapi_endpoints_count}")
+        if r.openapi_paths:
+            lines.append(f"  Paths ({len(r.openapi_paths)}):")
+            for p in r.openapi_paths:
+                lines.append(f"    {p}")
+        lines.append("")
+    else:
+        lines.append("[OpenAPI] Not found")
+        lines.append("")
+
+    # GraphQL
+    if r.graphql_found:
+        lines.append(f"[GraphQL] Found: {r.graphql_url}")
+        lines.append(f"  Introspection: {'enabled' if r.graphql_introspection else 'disabled'}")
+        if r.graphql_introspection:
+            lines.append(f"  Types:     {r.graphql_types_count}")
+            if r.graphql_queries:
+                lines.append(f"  Queries:   {', '.join(r.graphql_queries)}")
+            if r.graphql_mutations:
+                lines.append(f"  Mutations: {', '.join(r.graphql_mutations)}")
+        lines.append("")
+
+    # OIDC
+    if r.oidc_found:
+        lines.append(f"[OIDC] Provider: {r.oidc_provider}")
+        lines.append(f"  Issuer: {r.oidc_issuer}")
+        for ep_name, ep_url in r.oidc_endpoints.items():
+            if ep_url:
+                lines.append(f"  {ep_name}: {ep_url}")
+        lines.append("")
+
+    # Framework
+    if r.framework:
+        lines.append(f"[Framework] {r.framework}")
+        if r.framework_evidence:
+            lines.append(f"  Evidence: {r.framework_evidence}")
+        lines.append("")
+
+    # CORS
+    if r.cors_policy:
+        lines.append("[CORS Policy]")
+        for k, v in r.cors_policy.items():
+            lines.append(f"  {k}: {v}")
+        lines.append("")
+
+    # API Versions
+    if r.api_versions:
+        lines.append(f"[API Versions] ({len(r.api_versions)} detected)")
+        for v in r.api_versions:
+            lines.append(f"  {v['version']} — {v['path']} ({v['status']})")
+        lines.append("")
+
+    # robots.txt
+    if r.robots_disallowed:
+        lines.append(f"[robots.txt] {len(r.robots_disallowed)} disallowed paths")
+        for p in r.robots_disallowed[:15]:
+            lines.append(f"  {p}")
+        if len(r.robots_disallowed) > 15:
+            lines.append(f"  ... and {len(r.robots_disallowed) - 15} more")
+        lines.append("")
+
+    if r.sitemap_url:
+        lines.append(f"[Sitemap] {r.sitemap_url}")
+
+    # security.txt
+    if r.security_contact:
+        lines.append(f"[security.txt] Contact: {r.security_contact}")
+
+    # Sensitive paths
+    if r.sensitive_paths:
+        lines.append("")
+        lines.append(f"[!] Sensitive Paths ({len(r.sensitive_paths)}):")
+        for p in r.sensitive_paths:
+            lines.append(f"  {p}")
+
+    # Summary
+    lines.append("")
+    lines.append(f"Total endpoints discovered: {r.total_endpoints_discovered}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_api",
+    description=(
+        "Discover published API surfaces by probing well-known paths. "
+        "Finds OpenAPI/Swagger docs, GraphQL endpoints (with introspection), "
+        "OIDC/OAuth configuration, robots.txt, security.txt, CORS policy, "
+        "API versioning, and framework fingerprinting. Completely passive "
+        "Tier 1 — only accesses paths that legitimate clients would request."
+    ),
+    parameters={
+        "url": {
+            "type": "string",
+            "description": "Base URL of the target to discover (e.g. https://api.example.com).",
+        },
+    },
+)
+async def ghost_api(url: str) -> str:
+    """Discover published API surfaces for a target URL."""
+    if not url:
+        return "Error: url is required."
+    report = await api_discover(url)
+    return _format_api_discovery_report(report)
 
 
 # ---------------------------------------------------------------------------
