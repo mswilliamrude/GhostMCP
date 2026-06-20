@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     curl \
     openssh-server \
-    # Playwright Chromium deps
+    # Playwright Chromium deps (shared libraries needed at runtime)
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -46,7 +46,7 @@ RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh \
     && echo 'export PYTHONPATH=/app' >> /root/.bashrc \
     && echo 'cd /app' >> /root/.bashrc
 
-# Python deps
+# Python deps — these change infrequently
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
@@ -57,13 +57,6 @@ RUN pip install --no-cache-dir pytest pytest-asyncio
 RUN groupadd -r ghost && useradd -r -g ghost -d /app -s /bin/bash ghost && \
     mkdir -p /app/.cache && chown -R ghost:ghost /app && \
     mkdir -p /tmp/ghostmcp_ratelimit && chown ghost:ghost /tmp/ghostmcp_ratelimit
-
-# Install Playwright browsers
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-RUN pip install --no-cache-dir playwright && \
-    playwright install chromium && \
-    playwright install-deps chromium && \
-    chown -R ghost:ghost /app/.cache
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

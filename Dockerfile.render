@@ -1,0 +1,25 @@
+ARG ACR_SERVER=ghostmcp-base
+FROM ${ACR_SERVER}:latest
+
+# ============================================================
+# Render layer: Playwright + Chromium browser
+# ============================================================
+# This layer changes when:
+#   - Chromium needs a security update (~monthly)
+#   - Playwright version bumps
+#   - Browser dependencies change
+#
+# Rebuild: build-ghostmcp build render
+# Does NOT invalidate when pip deps or source code changes.
+# ============================================================
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+
+# Install Playwright and download Chromium binary (~400MB)
+RUN pip install --no-cache-dir playwright && \
+    playwright install chromium && \
+    playwright install-deps chromium && \
+    chown -R ghost:ghost /app/.cache
+
+# Verify installation
+RUN python3 -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
