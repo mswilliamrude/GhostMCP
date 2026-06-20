@@ -265,3 +265,234 @@ Unimind (memory) ──remembers──> findings, remediations, patterns
 ---
 Filed by: OpenCode agent during GhostMCP v0.4.0 session
 Date: 2026-06-19
+
+---
+
+## Feature Request: `ghost_auth_session` — Ephemeral Session-Scoped Authentication
+
+### Problem
+GhostMCP's Tier 1 tools are passive — they read publicly-advertised information. But for web development workflows, developers need an agent that can **log into their own application** and test authenticated pages: check security headers behind login walls, validate API responses for authenticated users, capture console errors in protected SPAs, and verify that access controls work correctly.
+
+Currently, Ghost has no concept of authentication. A developer can't say "log into my staging app at localhost:3000 and check all the pages."
+
+### Proposed Design
+
+Authentication is **session-scoped and ephemeral** — credentials exist only in memory for the duration of the MCP session, are never persisted to disk/database/logs, and are wiped on disconnect.
+
+#### `ghost_auth_session` — Create Ephemeral Auth Session
+```
+Input: {
+  url: string,                    # Login page or API endpoint
+  method: "form" | "bearer" | "cookie" | "basic" | "oauth2",
+  credentials: {                  # Method-specific
+    # form: {username_field, password_field, username, password, submit_selector}
+    # bearer: {token}
+    # cookie: {name, value}
+    # basic: {username, password}
+    # oauth2: {client_id, client_secret, token_url, scopes}
+  },
+  scope: "read_only" | "interactive",  # What the session is allowed to do
+  ttl_minutes: 30,                # Auto-wipe timer (default 30, max 120)
+  origin_lock: "localhost:3000",  # Session ONLY works for this origin
+}
+
+Output: {
+  session_id: string,           # Ephemeral in-memory reference
+  auth_type: "cookie" | "bearer" | "basic",
+  origin: "localhost:3000",
+  expires_at: "2026-06-20T14:30:00Z",
+  status: "authenticated",
+  # NEVER echoes credentials back
+}
+```
+
+#### Integration with Existing Tools
+Once a session exists, existing Ghost tools accept an optional `session` parameter:
+
+```python
+ghost_render(url="/dashboard", session=session_id)
+# → Renders authenticated page, returns DOM + console + network requests
+
+ghost_headers(url="/api/users", session=session_id)
+# → Checks security headers on authenticated endpoints
+
+ghost_api(url="http://localhost:3000", session=session_id)
+# → Discovers authenticated vs unauthenticated API surface diff
+# → "53 endpoints visible after auth vs 34 without"
+
+ghost_fetch(url="/api/me", session=session_id)
+# → Fetches authenticated API response
+```
+
+### Safety Controls
+
+| Control | Implementation |
+|---|---|
+| **Memory-only storage** | Python dict, never serialized, never written to disk/DB/log |
+| **Auto-expiry TTL** | Session auto-wipes after TTL (default 30 min) even if client doesn't disconnect |
+| **Origin lock** | Auth for `localhost:3000` cannot be used against `api.production.com` |
+| **No credential echo** | `ghost_auth_session` returns session metadata but NEVER returns credentials |
+| **No Unimind storage** | Auth sessions are explicitly excluded from knowledge assimilation |
+| **Session listing** | `ghost_auth_sessions()` returns active session count/origins but no credentials |
+| **Manual wipe** | `ghost_auth_destroy(session_id)` for immediate cleanup |
+| **Disconnect cleanup** | All sessions destroyed when MCP client disconnects |
+
+### Use Cases
+
+1. **Web Development QA** — "Log into my staging app and check all pages for console errors, missing headers, and broken links"
+2. **Authenticated API Testing** — "Log in as a regular user and tell me what API endpoints are visible vs what admin sees"
+3. **SPA Debugging Behind Auth** — "My Vue app works on the login page but breaks after login — render the dashboard and show me the console errors"
+4. **Access Control Validation** — "Log in as user A, check what /api/users returns, then log in as user B and compare"
+5. **Visual Regression** — "Screenshot every authenticated page before and after this deploy"
+6. **Security Header Audit** — "Check if authenticated pages have the same CSP/HSTS as public pages"
+
+### Architecture Notes
+
+- Sessions live in a `dict[str, AuthSession]` on the MCP server process
+- `AuthSession` dataclass holds: auth_type, cookies/headers (encrypted in memory), origin_lock, created_at, expires_at
+- When a tool receives `session=session_id`, it injects the stored auth headers/cookies into its httpx/Playwright request
+- For `ghost_render`, the Chromium browser context gets the session cookies set via CDP
+- **No changes to existing tool signatures** when used without auth — `session` parameter is always optional
+
+### Effort: ~3 days (~400 lines)
+- Session manager class (~100 lines)
+- Auth method handlers (form login via Playwright, bearer/cookie/basic injection) (~150 lines)
+- Integration hooks in ghost_render, ghost_headers, ghost_fetch, ghost_api (~100 lines)
+- Tests (~50 lines)
+
+### Priority: MEDIUM
+Significant UX improvement for web developers. Keeps Ghost as one MCP with a clean internal boundary between authenticated and unauthenticated operation.
+
+### Dependencies
+- `ghost_render` (existing — Playwright/Chromium)
+- No new pip dependencies
+
+---
+Filed by: OpenCode agent
+Date: 2026-06-20
+
+---
+
+## Feature Request: `ghost_asn` — BGP / ASN / Network Infrastructure Reconnaissance
+
+### Problem
+During organizational reconnaissance, understanding a target's network infrastructure is critical: which Autonomous System Numbers (ASNs) they operate, what IP prefixes they announce via BGP, who their upstream peers are, what Internet Exchange Points (IXPs) they connect to, and what other organizations share their network infrastructure. This information reveals the full scope of an organization's internet presence — far beyond what DNS alone shows.
+
+Currently `ghost_ip` provides geolocation and ISP/ASN info for a single IP, but can't answer "what is the full network footprint of this organization?"
+
+### Proposed Solution
+
+#### `ghost_asn` — ASN & BGP Infrastructure Lookup
+```
+Input: {
+  query: string,        # ASN number (e.g., "AS15169"), org name ("Google"), or IP address
+  query_type: "asn" | "org" | "ip",   # auto-detected if omitted
+}
+
+Output: {
+  asn: {
+    number: 15169,
+    name: "GOOGLE",
+    description: "Google LLC",
+    country: "US",
+    rir: "ARIN",                    # Regional Internet Registry
+    allocation_date: "2000-03-30",
+  },
+  prefixes_v4: [
+    {prefix: "8.8.8.0/24", name: "Google DNS", description: "..."},
+    {prefix: "142.250.0.0/15", name: "Google services", ...},
+    # ... all announced IPv4 prefixes
+  ],
+  prefixes_v6: [...],              # IPv6 prefixes
+  prefix_count: {v4: 847, v6: 512},
+  peers: {
+    upstream: [{asn: 6939, name: "Hurricane Electric", ...}],
+    downstream: [{asn: 36040, name: "YouTube", ...}],
+    peer_count: {upstream: 12, downstream: 234},
+  },
+  ix_presence: [                   # Internet Exchange Points
+    {ix: "AMS-IX", city: "Amsterdam", speed: "400G"},
+    {ix: "DE-CIX", city: "Frankfurt", speed: "400G"},
+  ],
+  related_asns: [                  # Other ASNs by same org
+    {asn: 36040, name: "YouTube"},
+    {asn: 396982, name: "Google Cloud"},
+  ],
+  abuse_contact: "network-abuse@google.com",
+  investigation_urls: {
+    bgpview: "https://bgpview.io/asn/15169",
+    ripestat: "https://stat.ripe.net/AS15169",
+    he_bgp: "https://bgp.he.net/AS15169",
+    peeringdb: "https://www.peeringdb.com/asn/15169",
+  }
+}
+```
+
+### What This Enables for Recon
+
+| Use Case | How ghost_asn Helps |
+|---|---|
+| **Full org footprint** | "Show me every IP range Google operates" → reveals infrastructure beyond DNS |
+| **Subsidiary discovery** | Related ASNs reveal acquisitions, subsidiaries, cloud tenants |
+| **Hosting identification** | IP → ASN mapping reveals if target uses AWS, Azure, GCP, or self-hosts |
+| **Peering analysis** | Upstream/downstream peers reveal network dependencies and transit paths |
+| **IX presence** | Where they physically interconnect — geographic footprint of infrastructure |
+| **IP attribution** | "Does this suspicious IP belong to the target org or a third party?" |
+| **Scope validation** | During authorized testing, confirm which IP ranges belong to the target |
+
+### Free APIs (No Authentication Required)
+
+| API | Endpoints | Rate Limit | Data |
+|---|---|---|---|
+| **BGPView** | `/asn/{asn}`, `/asn/{asn}/prefixes`, `/asn/{asn}/peers`, `/asn/{asn}/ixs`, `/ip/{ip}`, `/search?query_term={org}` | ~100 req/min (undocumented) | ASN details, prefixes, peers, IXPs |
+| **RIPEstat** | `/data/as-overview/data.json`, `/data/announced-prefixes/data.json`, `/data/asn-neighbours/data.json` | Fair use (no hard limit) | Comprehensive RIR data, historical |
+| **PeeringDB** | `/api/net?asn={asn}` | Generous (API key optional) | IX presence, peering policies, facility info |
+| **Team Cymru** | DNS-based: `dig +short AS15169.asn.cymru.com TXT` | Unlimited (DNS) | Lightweight ASN/prefix origin lookups |
+
+**Recommended primary:** BGPView (richest free API, JSON, no auth)
+**Recommended fallback:** RIPEstat (authoritative RIR data, more conservative)
+**Recommended enrichment:** PeeringDB (IX/facility info BGPView doesn't have)
+
+### Implementation
+
+```python
+# Primary: BGPView API (https://bgpview.docs.apiary.io/)
+async def _bgpview_asn(asn: int) -> dict:
+    r = await httpx_client.get(f"https://api.bgpview.io/asn/{asn}")
+    prefixes = await httpx_client.get(f"https://api.bgpview.io/asn/{asn}/prefixes")
+    peers = await httpx_client.get(f"https://api.bgpview.io/asn/{asn}/peers")
+    ixs = await httpx_client.get(f"https://api.bgpview.io/asn/{asn}/ixs")
+    # Merge and format
+
+# IP → ASN lookup
+async def _ip_to_asn(ip: str) -> dict:
+    r = await httpx_client.get(f"https://api.bgpview.io/ip/{ip}")
+    # Returns ASN + prefix for the IP
+
+# Org name → ASN search
+async def _search_org(name: str) -> list:
+    r = await httpx_client.get(f"https://api.bgpview.io/search?query_term={name}")
+    # Returns matching ASNs, IPs, prefixes
+```
+
+### Integration with Existing Tools
+
+- `ghost_ip` → already returns ASN; `ghost_asn` expands on that with full prefix/peer/IX data
+- `ghost_subdomains` → discovered subdomains can be mapped to ASNs to identify which are self-hosted vs cloud
+- `ghost_cert` → certificate SANs can be cross-referenced with ASN prefix ranges
+- `ghost_recon` → ASN data enriches the overall organizational recon picture
+
+### Effort: ~2 days (~250 lines)
+- BGPView API client (~100 lines)
+- RIPEstat fallback (~50 lines)
+- PeeringDB enrichment (~50 lines)
+- Response formatting and investigation URLs (~50 lines)
+
+### Priority: MEDIUM
+High value for organizational recon. Zero cost (free APIs), zero new dependencies (httpx only), zero infrastructure.
+
+### Dependencies: None (httpx only)
+
+---
+Filed by: OpenCode agent
+Date: 2026-06-20
