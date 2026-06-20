@@ -27,6 +27,7 @@ from .learning import (
     CaptchaEvent,
 )
 from .solver_chain import solve_captcha, SolveAttempt
+from .clip_classifier import CLIPClassifier, is_loaded as clip_is_loaded, get_model_info as clip_model_info
 
 __all__ = [
     "detect_captcha",
@@ -38,6 +39,9 @@ __all__ = [
     "TileClassification",
     "TileClassifier",
     "DummyClassifier",
+    "CLIPClassifier",
+    "clip_is_loaded",
+    "clip_model_info",
     "solve_slider_captcha",
     "find_gap_position",
     "simulate_slider_drag",

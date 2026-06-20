@@ -1,0 +1,23 @@
+ARG BASE_IMAGE=ghostmcp-layer2
+FROM ${BASE_IMAGE}:latest
+
+# Layer 3: pip packages (non-model dependencies)
+# Changes: when requirements.txt is modified
+# Size: ~400MB (playwright + chromium + other deps)
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Install pytest for in-container testing
+RUN pip install --no-cache-dir pytest pytest-asyncio
+
+# Install Playwright Chromium browser binary
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN playwright install chromium && \
+    playwright install-deps chromium && \
+    chown -R ghost:ghost /app/.cache
+
+# Shell convenience
+RUN echo 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright' >> /root/.bashrc \
+    && echo 'export PYTHONPATH=/app' >> /root/.bashrc \
+    && echo 'cd /app' >> /root/.bashrc

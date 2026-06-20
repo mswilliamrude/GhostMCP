@@ -1,0 +1,28 @@
+ARG BASE_IMAGE=ghostmcp-layer3
+FROM ${BASE_IMAGE}:latest
+
+# Layer 4: Application source code
+# Changes: every commit (fast — just COPY)
+# Size: ~5MB
+
+# Build metadata
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+ARG BUILD_TIME=unknown
+ENV GHOST_GIT_COMMIT=$GIT_COMMIT
+ENV GHOST_GIT_BRANCH=$GIT_BRANCH
+ENV GHOST_BUILD_TIME=$BUILD_TIME
+
+# App code
+COPY --chown=ghost:ghost src/ /app/src/
+COPY --chown=ghost:ghost tests/ /app/tests/
+
+WORKDIR /app
+
+ENV GHOST_PARANOIA=cautious
+ENV GHOST_MIN_DELAY=2.0
+
+EXPOSE 22 8080
+
+ENTRYPOINT ["tini", "--"]
+CMD ["/bin/bash", "-c", "ssh-keygen -A 2>/dev/null; /usr/sbin/sshd; exec python3 -m src"]

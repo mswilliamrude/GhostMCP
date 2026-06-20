@@ -1,0 +1,53 @@
+ARG BASE_IMAGE=ghostmcp-layer1
+FROM ${BASE_IMAGE}:latest
+
+# Layer 2: LLM / Vision Model
+# Changes: when model is updated/swapped
+# Size: ~150-350MB (model weights)
+#
+# Downloads MobileCLIP-S2 (Apple's distilled CLIP variant):
+#   - 150MB weights, ~200MB runtime RAM
+#   - Optimized for mobile/edge inference
+#   - Zero-shot image classification (CAPTCHA tile solving)
+#   - CPU-only (no GPU required)
+
+# Install minimal ML deps for model loading (torch-cpu is lighter)
+RUN pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir \
+    open-clip-torch \
+    Pillow
+
+# Download model weights at build time (cached in layer)
+# This avoids a 2-3s download on first CAPTCHA encounter
+RUN python3 -c "
+import open_clip
+# Download MobileCLIP-S2 (Apple's efficient variant)
+# Falls back to ViT-B-32 if MobileCLIP not available in this open_clip version
+try:
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        'MobileCLIP-S2', pretrained='datacomp_s_s2'
+    )
+    print('MobileCLIP-S2 downloaded successfully')
+except Exception:
+    # Fallback to standard CLIP ViT-B-32
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        'ViT-B-32', pretrained='openai'
+    )
+    print('ViT-B-32 downloaded as fallback')
+" && \
+    chown -R ghost:ghost /root/.cache 2>/dev/null || true
+
+# Store which model was downloaded for runtime detection
+RUN python3 -c "
+import open_clip
+try:
+    open_clip.create_model_and_transforms('MobileCLIP-S2', pretrained='datacomp_s_s2')
+    model_name = 'MobileCLIP-S2:datacomp_s_s2'
+except:
+    model_name = 'ViT-B-32:openai'
+with open('/app/models/clip_model_id.txt', 'w') as f:
+    f.write(model_name)
+"
+
+ENV GHOST_CLIP_MODEL_PATH=/app/models/clip_model_id.txt
