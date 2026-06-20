@@ -2678,6 +2678,240 @@ async def ghost_api(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Ephemeral authentication session tool
+# ---------------------------------------------------------------------------
+
+from .auth import get_session_manager, form_login
+
+
+@mcp.tool(
+    name="ghost_auth_session",
+    description=(
+        "Create or manage an ephemeral authentication session. Sessions are memory-only, "
+        "auto-expire, and origin-locked. Use 'create' to start a session, 'list' to see "
+        "active sessions, 'destroy' to end one."
+    ),
+    parameters={
+        "action": {
+            "type": "string",
+            "description": "Action: create, list, destroy, destroy_all.",
+            "default": "list",
+        },
+        "auth_type": {
+            "type": "string",
+            "description": "For create: bearer, cookie, basic, form.",
+            "default": "bearer",
+        },
+        "origin": {
+            "type": "string",
+            "description": "For create: origin to lock session to (e.g., https://localhost:3000).",
+            "default": "",
+        },
+        "token": {
+            "type": "string",
+            "description": "For create/bearer: the bearer token.",
+            "default": "",
+        },
+        "cookies": {
+            "type": "string",
+            "description": "For create/cookie: JSON string of cookie name:value pairs.",
+            "default": "",
+        },
+        "headers": {
+            "type": "string",
+            "description": "For create: JSON string of custom auth headers.",
+            "default": "",
+        },
+        "ttl_minutes": {
+            "type": "integer",
+            "description": "Session lifetime in minutes (default 30, max 120).",
+            "default": 30,
+        },
+        "session_id": {
+            "type": "string",
+            "description": "For destroy: session ID to destroy.",
+            "default": "",
+        },
+        "url": {
+            "type": "string",
+            "description": "For create/form: login page URL.",
+            "default": "",
+        },
+        "username": {
+            "type": "string",
+            "description": "For create/form: username.",
+            "default": "",
+        },
+        "password": {
+            "type": "string",
+            "description": "For create/form: password.",
+            "default": "",
+        },
+    },
+)
+async def ghost_auth_session(
+    action: str = "list",
+    auth_type: str = "bearer",
+    origin: str = "",
+    token: str = "",
+    cookies: str = "",
+    headers: str = "",
+    ttl_minutes: int = 30,
+    session_id: str = "",
+    url: str = "",
+    username: str = "",
+    password: str = "",
+) -> str:
+    """Create or manage ephemeral authentication sessions."""
+    mgr = get_session_manager()
+    action = action.strip().lower()
+
+    if action == "list":
+        sessions = await mgr.list_sessions()
+        if not sessions:
+            return "No active auth sessions."
+        lines = ["Active Auth Sessions", "=" * 40, ""]
+        for s in sessions:
+            lines.append(f"  ID: {s['session_id']}")
+            lines.append(f"    Type:      {s['auth_type']}")
+            lines.append(f"    Origin:    {s['origin']}")
+            lines.append(f"    TTL:       {s['ttl_minutes']} min")
+            lines.append(f"    Remaining: {s['remaining_seconds']}s")
+            lines.append("")
+        return "\n".join(lines)
+
+    elif action == "create":
+        if not origin:
+            return "Error: origin is required for create (e.g., https://localhost:3000)."
+
+        auth_type = auth_type.strip().lower()
+
+        if auth_type == "form":
+            # Form-based login via Playwright
+            if not url:
+                return "Error: url is required for form login."
+            if not username or not password:
+                return "Error: username and password are required for form login."
+
+            result = await form_login(url=url, username=username, password=password)
+
+            if not result.success:
+                return f"Form login failed: {result.error or 'Unknown error'}"
+
+            # Create session from captured cookies
+            session = await mgr.create_session(
+                auth_type="form",
+                origin=origin,
+                ttl_minutes=ttl_minutes,
+                cookies=result.cookies,
+            )
+
+            cookie_count = len(result.cookies)
+            storage_count = len(result.session_storage) if result.session_storage else 0
+            return (
+                f"Form login successful.\n"
+                f"  Session ID:     {session.session_id}\n"
+                f"  Origin:         {session.origin}\n"
+                f"  TTL:            {session.ttl_minutes} min\n"
+                f"  Cookies:        {cookie_count} captured\n"
+                f"  Storage tokens: {storage_count} captured\n"
+                f"  Final URL:      {result.final_url}"
+            )
+
+        elif auth_type == "bearer":
+            if not token:
+                return "Error: token is required for bearer auth."
+
+            session = await mgr.create_session(
+                auth_type="bearer",
+                origin=origin,
+                ttl_minutes=ttl_minutes,
+                bearer_token=token,
+            )
+            return (
+                f"Bearer auth session created.\n"
+                f"  Session ID: {session.session_id}\n"
+                f"  Origin:     {session.origin}\n"
+                f"  TTL:        {session.ttl_minutes} min"
+            )
+
+        elif auth_type == "cookie":
+            if not cookies:
+                return "Error: cookies JSON string is required for cookie auth."
+
+            try:
+                cookie_dict = json.loads(cookies)
+            except json.JSONDecodeError as e:
+                return f"Error: invalid cookies JSON: {e}"
+
+            if not isinstance(cookie_dict, dict):
+                return "Error: cookies must be a JSON object (name: value pairs)."
+
+            session = await mgr.create_session(
+                auth_type="cookie",
+                origin=origin,
+                ttl_minutes=ttl_minutes,
+                cookies=cookie_dict,
+            )
+            return (
+                f"Cookie auth session created.\n"
+                f"  Session ID: {session.session_id}\n"
+                f"  Origin:     {session.origin}\n"
+                f"  TTL:        {session.ttl_minutes} min\n"
+                f"  Cookies:    {len(cookie_dict)} stored"
+            )
+
+        elif auth_type == "basic":
+            # Basic auth stored as Authorization header
+            if not username or not password:
+                return "Error: username and password are required for basic auth."
+
+            import base64
+            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+            auth_headers = {"Authorization": f"Basic {credentials}"}
+
+            # Parse any additional headers
+            extra_headers = {}
+            if headers:
+                try:
+                    extra_headers = json.loads(headers)
+                except json.JSONDecodeError as e:
+                    return f"Error: invalid headers JSON: {e}"
+            auth_headers.update(extra_headers)
+
+            session = await mgr.create_session(
+                auth_type="basic",
+                origin=origin,
+                ttl_minutes=ttl_minutes,
+                headers=auth_headers,
+            )
+            return (
+                f"Basic auth session created.\n"
+                f"  Session ID: {session.session_id}\n"
+                f"  Origin:     {session.origin}\n"
+                f"  TTL:        {session.ttl_minutes} min"
+            )
+
+        else:
+            return f"Error: unknown auth_type '{auth_type}'. Use: bearer, cookie, basic, form."
+
+    elif action == "destroy":
+        if not session_id:
+            return "Error: session_id is required for destroy."
+        destroyed = await mgr.destroy_session(session_id)
+        if destroyed:
+            return f"Session {session_id} destroyed. Credentials wiped from memory."
+        return f"Session {session_id} not found (may have already expired)."
+
+    elif action == "destroy_all":
+        count = await mgr.destroy_all()
+        return f"All sessions destroyed ({count} wiped from memory)."
+
+    else:
+        return f"Error: unknown action '{action}'. Use: create, list, destroy, destroy_all."
+
+
+# ---------------------------------------------------------------------------
 # HTTP health endpoint + entry point
 # ---------------------------------------------------------------------------
 
