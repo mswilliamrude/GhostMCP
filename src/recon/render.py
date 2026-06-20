@@ -52,6 +52,13 @@ async def render_page(
     report = RenderReport(url=url)
 
     try:
+        # Import stealth module (optional — degrades gracefully)
+        try:
+            from ..stealth import apply_stealth, get_stealth_context_options
+            _has_stealth = True
+        except ImportError:
+            _has_stealth = False
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -63,12 +70,21 @@ async def render_page(
                 ]
             )
 
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                viewport={"width": 1920, "height": 1080},
-            )
+            # Use stealth context options if available, else fallback
+            if _has_stealth:
+                ctx_options = get_stealth_context_options()
+            else:
+                ctx_options = {
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "viewport": {"width": 1920, "height": 1080},
+                }
 
+            context = await browser.new_context(**ctx_options)
             page = await context.new_page()
+
+            # Apply stealth patches before navigation
+            if _has_stealth:
+                await apply_stealth(page)
 
             # Capture console messages
             page.on("console", lambda msg: (
