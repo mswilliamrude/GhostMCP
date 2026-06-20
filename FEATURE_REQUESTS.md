@@ -62,3 +62,150 @@ This is the single biggest gap in the AI-assisted frontend development workflow.
 ---
 Filed by: OpenCode agent during NewHotness webmail development session
 Date: 2026-06-17
+
+---
+
+## Feature Request: Passive Security Assessment Tools (Tier 1 DAST-Adjacent)
+
+### Problem
+GhostMCP currently identifies infrastructure (subdomains, certs, tech stack) but doesn't assess the *security posture* of what it finds. An agent doing recon can find a website but can't tell you "this site has no CSP, no HSTS, serves CORS headers to everyone, and has a misconfigured SPF record" without active exploitation.
+
+These checks are **passive** — a single HTTP request or DNS lookup — and require NO authorization from the target. They observe publicly-advertised security policies, not vulnerabilities.
+
+### Proposed Tools
+
+#### `ghost_headers` — Security Header Analysis & Grading
+```
+Input: URL
+Output: {
+  grade: "A" | "B" | "C" | "D" | "F",
+  headers_present: {
+    strict_transport_security: {value, rating, recommendation},
+    content_security_policy: {value, rating, recommendation},
+    x_frame_options: {value, rating, recommendation},
+    x_content_type_options: {value, rating, recommendation},
+    referrer_policy: {value, rating, recommendation},
+    permissions_policy: {value, rating, recommendation},
+    cors: {value, rating, recommendation},
+  },
+  headers_missing: [list of recommended headers not set],
+  warnings: [specific issues — "CSP uses unsafe-inline", "HSTS max-age too low"],
+  raw_headers: {full response headers},
+}
+```
+**Effort:** ~150 lines, 1 day
+**Legal:** Fully passive — single GET request, reads publicly-served headers
+
+#### `ghost_dns` — DNS Security & Misconfiguration Checks
+```
+Input: domain
+Output: {
+  spf: {record, valid, issues},
+  dkim: {selector_found, valid},
+  dmarc: {record, policy, issues},
+  dnssec: {enabled, valid},
+  zone_transfer: {vulnerable: bool},
+  dangling_cnames: [{subdomain, cname_target, status}],
+  mx_records: [{priority, host, supports_tls}],
+  nameservers: [list],
+  caa_records: [list],
+}
+```
+**Effort:** ~250 lines, 2 days
+**Legal:** All DNS lookups are passive public queries
+
+#### `ghost_cert` upgrades — SSL/TLS Grading
+Enhance existing `ghost_cert` with:
+- Letter grade (A/B/C/D/F like SSL Labs)
+- Protocol version warnings (TLS 1.0/1.1 deprecated)
+- Weak cipher detection
+- Certificate transparency log check
+- HPKP/CAA policy validation
+
+**Effort:** ~100 lines added to existing module, 1 day
+**Legal:** Already implemented — just adding grading logic
+
+### Priority: MEDIUM
+These are natural extensions of existing recon tools. Low effort, high value for security assessments. All passive and legal against any target.
+
+### Research References
+- See `docs/research/DAST_SECURITY_SCANNING.md` for full landscape analysis
+- SecurityHeaders.com (free online header checker — our competition)
+- Mozilla Observatory (free, open source — grades headers)
+- SSL Labs (Qualys — the gold standard for TLS grading)
+
+---
+Filed by: OpenCode agent during GhostMCP v0.4.0 session
+Date: 2026-06-19
+
+---
+
+## Feature Request: Active DAST Scanning (Tier 2 — Out of Scope Without Authorization)
+
+### IMPORTANT: Legal & Ethical Constraints
+
+**Active DAST scanning sends attack payloads (SQL injection, XSS, path traversal, etc.) to the target. This is ONLY legal when:**
+1. You own the target, OR
+2. You have explicit written authorization from the target owner (scope document, bug bounty program, pen test agreement)
+
+**Unauthorized active scanning is illegal under CFAA (US), Computer Misuse Act (UK), and equivalent laws worldwide. GhostMCP MUST enforce authorization acknowledgment before executing any active scan.**
+
+### Proposed Design (Future / ForensicsMCP Territory)
+
+#### `ghost_scan` — Orchestrated DAST Scanning
+```
+Input: {
+  target: URL,
+  authorization: "i_own_this" | "authorized_pentest" | "bug_bounty",
+  scan_type: "baseline" | "full" | "api",
+  api_spec: (optional OpenAPI/Swagger URL),
+}
+Output: {
+  job_id: string,
+  status: "queued" | "running" | "complete",
+  estimated_time: "15 min",
+}
+
+# Then poll for results:
+Input: {job_id}
+Output: {
+  findings: [{severity, confidence, url, evidence, cwe_id, description, remediation}],
+  scan_duration: "12 min",
+  requests_sent: 4521,
+  alerts_by_severity: {high: 2, medium: 5, low: 12, info: 34},
+}
+```
+
+#### Implementation Options
+| Option | Pros | Cons |
+|---|---|---|
+| **ZAP Docker sidecar** | Full DAST, free, we have Docker infra | Heavy (~1GB image), slow startup |
+| **Nuclei in container** | Lightweight, fast, template-based | Less thorough than ZAP for logic bugs |
+| **StackHawk API** | Hosted, no infra to manage, built on ZAP | Paid ($), another API key |
+| **Burp Suite Enterprise API** | Gold standard accuracy | Expensive ($8K+/yr) |
+
+#### Safety Controls Required
+1. **Authorization prompt** — tool MUST require explicit acknowledgment before scanning
+2. **Scope enforcement** — only scan the specified domain, no following external links
+3. **Rate limiting** — respect robots.txt, limit concurrent requests
+4. **Audit logging** — log every scan with target, time, authorization claim, who initiated
+5. **Kill switch** — ability to stop a running scan immediately
+6. **No credential storage** — if auth is needed, accept it per-scan, never persist
+
+### Priority: LOW (future / out of scope for current GhostMCP)
+This belongs in a separate project (ForensicsMCP) or behind a very explicit "I know what I'm doing" gate. GhostMCP's identity is passive OSINT, not active exploitation.
+
+### Relationship to GhostMCP
+```
+GhostMCP (passive) ──finds──> targets, tech stacks, exposed surfaces
+         │
+         ▼
+ForensicsMCP (active) ──tests──> specific vulns with authorization
+         │
+         ▼
+Unimind (memory) ──remembers──> findings, remediations, patterns
+```
+
+---
+Filed by: OpenCode agent during GhostMCP v0.4.0 session
+Date: 2026-06-19
