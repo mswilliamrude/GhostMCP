@@ -1,0 +1,110 @@
+<mxfile host="app.diagrams.net">
+    <diagram name="GhostMCP Tier 1 Passive Security — Data Flow" id="tier1_dataflow">
+        <mxGraphModel dx="0" dy="0" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="750" background="none" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <!-- Title -->
+                <mxCell id="title_main" value="GhostMCP Tier 1: Passive Security Assessment — Data Flow" style="text;html=1;fontSize=18;fontColor=#2D3748;align=center;verticalAlign=middle;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="10" width="1020" height="28" as="geometry"/>
+                </mxCell>
+                <!-- Agent (left) -->
+                <mxCell id="node_agent" value="&lt;b&gt;AI Agent&lt;/b&gt;&lt;br&gt;(opencode / Claude)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F0FE;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;fontSize=13;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="320" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <!-- GhostMCP box (center group) -->
+                <mxCell id="group_ghost" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#CBD5E0;strokeWidth=1;dashed=1;arcSize=5;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="60" width="380" height="620" as="geometry"/>
+                </mxCell>
+                <mxCell id="group_ghost_title" value="&lt;b&gt;GhostMCP (local or container)&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="70" width="280" height="24" as="geometry"/>
+                </mxCell>
+                <!-- ghost_headers tool -->
+                <mxCell id="node_headers" value="&lt;b&gt;ghost_headers&lt;/b&gt;&lt;br&gt;Security Header Grading" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6E4F9;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="120" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <!-- ghost_dns tool -->
+                <mxCell id="node_dns" value="&lt;b&gt;ghost_dns&lt;/b&gt;&lt;br&gt;DNS Security Analysis" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6E4F9;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="320" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <!-- ghost_cert upgrade -->
+                <mxCell id="node_cert" value="&lt;b&gt;ghost_cert&lt;/b&gt;&lt;br&gt;TLS Grading (upgrade)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6E4F9;strokeColor=#5B8DEF;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="520" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <!-- Processing steps - headers -->
+                <mxCell id="node_hdr_parse" value="Parse Headers&lt;br&gt;Grade A+ to F" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDF2F7;strokeColor=#A0AEC0;strokeWidth=1;arcSize=10;fontSize=11;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="200" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <!-- Processing steps - dns -->
+                <mxCell id="node_dns_parse" value="Analyze SPF/DKIM&lt;br&gt;DMARC/DNSSEC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDF2F7;strokeColor=#A0AEC0;strokeWidth=1;arcSize=10;fontSize=11;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="400" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <!-- Processing steps - cert -->
+                <mxCell id="node_cert_grade" value="Grade Protocol&lt;br&gt;Cipher + Key Strength" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDF2F7;strokeColor=#A0AEC0;strokeWidth=1;arcSize=10;fontSize=11;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="600" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <!-- Targets (right side) -->
+                <mxCell id="node_webserver" value="&lt;b&gt;Target Web Server&lt;/b&gt;&lt;br&gt;(1 GET request)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E8A87C;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="130" width="170" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_resolver" value="&lt;b&gt;DNS Resolver&lt;/b&gt;&lt;br&gt;(8-15 queries, parallel)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E8A87C;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="290" width="170" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_authns" value="&lt;b&gt;Authoritative NS&lt;/b&gt;&lt;br&gt;(AXFR attempt)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E8A87C;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="370" width="170" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_tlshost" value="&lt;b&gt;Target TLS Port&lt;/b&gt;&lt;br&gt;(1 TLS handshake)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E5;strokeColor=#E8A87C;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="530" width="170" height="55" as="geometry"/>
+                </mxCell>
+                <!-- Output (bottom right) -->
+                <mxCell id="node_output" value="&lt;b&gt;Security Report&lt;/b&gt;&lt;br&gt;Grades + Recommendations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5EC;strokeColor=#5BA87C;strokeWidth=1.2;arcSize=10;fontSize=12;fontColor=#2D3748;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="600" width="160" height="55" as="geometry"/>
+                </mxCell>
+                <!-- Arrows: Agent to tools -->
+                <mxCell id="arr_agent_headers" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5B8DEF;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_agent" target="node_headers" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_agent_dns" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5B8DEF;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_agent" target="node_dns" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_agent_cert" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5B8DEF;strokeWidth=0.8;endSize=5;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_agent" target="node_cert" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Arrows: Tools to processing -->
+                <mxCell id="arr_hdr_parse" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#A0AEC0;strokeWidth=0.8;endSize=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_headers" target="node_hdr_parse" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_dns_parse" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#A0AEC0;strokeWidth=0.8;endSize=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_dns" target="node_dns_parse" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_cert_grade" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#A0AEC0;strokeWidth=0.8;endSize=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_cert" target="node_cert_grade" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Arrows: Tools to targets -->
+                <mxCell id="arr_hdr_web" value="&lt;span style=&quot;font-size:9px;color:#4A7ADB&quot;&gt;GET /&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E8A87C;strokeWidth=0.8;endSize=5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_headers" target="node_webserver" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_dns_resolver" value="&lt;span style=&quot;font-size:9px;color:#4A7ADB&quot;&gt;TXT/MX/NS/CAA&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E8A87C;strokeWidth=0.8;endSize=5;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_dns" target="node_resolver" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_dns_authns" value="&lt;span style=&quot;font-size:9px;color:#4A7ADB&quot;&gt;AXFR&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E8A87C;strokeWidth=0.8;endSize=5;html=1;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_dns" target="node_authns" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="arr_cert_tls" value="&lt;span style=&quot;font-size:9px;color:#4A7ADB&quot;&gt;TLS handshake&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#E8A87C;strokeWidth=0.8;endSize=5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_cert" target="node_tlshost" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Arrow: Output back to agent -->
+                <mxCell id="arr_output_agent" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeColor=#5BA87C;strokeWidth=0.8;endSize=5;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="node_output" target="node_agent" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Labels -->
+                <mxCell id="label_passive" value="&lt;span style=&quot;font-size:10px;color:#5BA87C;font-style:italic&quot;&gt;All checks are PASSIVE — no attack payloads, no authorization needed&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="700" width="380" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="label_requests" value="&lt;span style=&quot;font-size:10px;color:#718096&quot;&gt;Total: 1 HTTP GET + 8-15 DNS queries + 1 TLS handshake&lt;br&gt;Same traffic as visiting the site in a browser&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="640" width="300" height="40" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
