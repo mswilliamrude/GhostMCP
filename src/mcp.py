@@ -216,6 +216,8 @@ async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
 
 from .engines.base import SearchResult, SearchEngineError
 from .engines.brave import BraveEngine
+from .engines.brave_media import BraveMediaEngine, ImageResult, VideoResult, NewsResult
+from .engines.bing import BingEngine
 from .engines.duckduckgo import DuckDuckGoEngine
 from .engines.google import GoogleEngine
 from .engines.serper import SerperEngine
@@ -224,7 +226,7 @@ from .dorking.builder import build_dork, from_template
 from .dorking.templates import get_template_names
 from .proxy.manager import ProxyManager
 from .proxy.fingerprint import get_headers
-from .recon.certs import CertReport, inspect_cert
+from .recon.certs import CertReport, inspect_cert, grade_cert, jarm_fingerprint
 from .recon.hashes import HashLookup, detect_hash_type, HashReport
 from .recon.render import render_page, RenderReport
 from .recon.subdomains import enumerate_subdomains, dns_brute_force, SubdomainReport
@@ -284,6 +286,15 @@ def _get_rotator(paranoia: str = "cautious") -> EngineRotator:
             brave,
             is_api=True,
             max_per_window=30,  # Conservative: 30 per 10 min (Brave: 2000/month ≈ ~67/day)
+            base_cooldown=30.0,
+        )
+
+    bing = BingEngine(proxy=proxy)
+    if bing.available:
+        rotator.register(
+            bing,
+            is_api=True,
+            max_per_window=20,  # Conservative: 20 per 10 min
             base_cooldown=30.0,
         )
 
@@ -545,6 +556,7 @@ async def ghost_search(
     eng_map = {
         "serper": lambda: SerperEngine(proxy=proxy),
         "brave": lambda: BraveEngine(proxy=proxy),
+        "bing": lambda: BingEngine(proxy=proxy),
         "google": lambda: GoogleEngine(proxy=proxy, paranoia=paranoia),
         "duckduckgo": lambda: DuckDuckGoEngine(proxy=proxy),
     }
@@ -559,6 +571,135 @@ async def ghost_search(
         return header + _format_results(results)
     except SearchEngineError as e:
         return f"Engine error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Media search tool (images, videos, news via Brave)
+# ---------------------------------------------------------------------------
+
+def _format_image_results(results: list[ImageResult]) -> str:
+    """Format image results as readable text."""
+    if not results:
+        return "No image results found."
+
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. {r.title}")
+        lines.append(f"   Page: {r.url}")
+        lines.append(f"   Image: {r.image_url}")
+        if r.thumbnail_url:
+            lines.append(f"   Thumb: {r.thumbnail_url}")
+        if r.source:
+            lines.append(f"   Source: {r.source}")
+        if r.width and r.height:
+            lines.append(f"   Size: {r.width}x{r.height}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_video_results(results: list[VideoResult]) -> str:
+    """Format video results as readable text."""
+    if not results:
+        return "No video results found."
+
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. {r.title}")
+        lines.append(f"   URL: {r.url}")
+        if r.source:
+            lines.append(f"   Source: {r.source}")
+        if r.duration:
+            lines.append(f"   Duration: {r.duration}")
+        if r.published:
+            lines.append(f"   Published: {r.published}")
+        if r.description:
+            lines.append(f"   {r.description[:200]}")
+        if r.thumbnail_url:
+            lines.append(f"   Thumb: {r.thumbnail_url}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_news_results(results: list[NewsResult]) -> str:
+    """Format news results as readable text."""
+    if not results:
+        return "No news results found."
+
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. {r.title}")
+        lines.append(f"   URL: {r.url}")
+        if r.source:
+            lines.append(f"   Source: {r.source}")
+        if r.published:
+            lines.append(f"   Published: {r.published}")
+        if r.description:
+            lines.append(f"   {r.description[:200]}")
+        if r.thumbnail_url:
+            lines.append(f"   Thumb: {r.thumbnail_url}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_media",
+    description="Search for images, videos, or news via Brave Search API.",
+    parameters={
+        "query": {"type": "string", "description": "Search query."},
+        "media_type": {
+            "type": "string",
+            "description": "Type: images, videos, or news.",
+            "default": "images",
+        },
+        "num_results": {
+            "type": "integer",
+            "description": "Number of results (max 20).",
+            "default": 10,
+        },
+    },
+)
+async def ghost_media(
+    query: str,
+    media_type: str = "images",
+    num_results: int = 10,
+) -> str:
+    """Search for images, videos, or news via Brave Search API."""
+    if not query:
+        return "Error: query is required."
+
+    media_type = media_type.strip().lower()
+    if media_type not in ("images", "videos", "news"):
+        return f"Error: unknown media_type '{media_type}'. Use: images, videos, or news."
+
+    num_results = min(max(1, int(num_results)), 20)
+
+    engine = BraveMediaEngine()
+
+    if not engine.available:
+        return (
+            "Error: GHOST_BRAVE_KEY not set. "
+            "Media search requires a Brave Search API key.\n"
+            "Get a free key (2,000 searches/month) at https://brave.com/search/api/"
+        )
+
+    try:
+        if media_type == "images":
+            results = await engine.search_images(query, num_results=num_results)
+            header = f"[brave/images] Results for: {query}\n\n"
+            return header + _format_image_results(results)
+        elif media_type == "videos":
+            results = await engine.search_videos(query, num_results=num_results)
+            header = f"[brave/videos] Results for: {query}\n\n"
+            return header + _format_video_results(results)
+        else:  # news
+            results = await engine.search_news(query, num_results=num_results)
+            header = f"[brave/news] Results for: {query}\n\n"
+            return header + _format_news_results(results)
+    except SearchEngineError as e:
+        return f"Media search error: {e}"
 
 
 @mcp.tool(
@@ -1249,6 +1390,13 @@ def _format_cert_report(report: CertReport) -> str:
         return f"Error inspecting {report.host}:{report.port}: {report.error}"
 
     lines: list[str] = []
+
+    # Grade prominently at the top
+    if report.grade:
+        grade_line = f"Grade: {report.grade} ({report.score}/100)"
+        lines.append(grade_line)
+        lines.append("")
+
     lines.append(f"TLS Certificate: {report.host}:{report.port}")
     lines.append("=" * 50)
     lines.append(f"Subject:     {report.subject}")
@@ -1278,6 +1426,28 @@ def _format_cert_report(report: CertReport) -> str:
         lines.append(f"Chain ({len(report.chain)}):")
         for i, cn in enumerate(report.chain):
             lines.append(f"  [{i}] {cn}")
+        lines.append("")
+
+    # Grade details breakdown
+    if report.grade_details:
+        lines.append("Score Breakdown:")
+        lines.append(f"  Protocol:       {report.grade_details.get('protocol', 0)}/30")
+        lines.append(f"  Key Strength:   {report.grade_details.get('key_strength', 0)}/20")
+        lines.append(f"  Validity:       {report.grade_details.get('validity', 0)}/20")
+        lines.append(f"  Cipher:         {report.grade_details.get('cipher', 0)}/15")
+        lines.append(f"  Chain:          {report.grade_details.get('chain', 0)}/15")
+        lines.append("")
+
+    # Warnings
+    if report.warnings:
+        lines.append(f"Warnings ({len(report.warnings)}):")
+        for w in report.warnings:
+            lines.append(f"  ! {w}")
+        lines.append("")
+
+    # JARM fingerprint (if computed)
+    if report.jarm_hash:
+        lines.append(f"JARM Hash:   {report.jarm_hash}")
 
     return "\n".join(lines)
 
@@ -1287,7 +1457,9 @@ def _format_cert_report(report: CertReport) -> str:
     description=(
         "Inspect the TLS certificate of a host. Connects to host:port, pulls the "
         "certificate, and reports subject, issuer, expiry, SANs, fingerprint, "
-        "protocol, cipher suite, key type, chain, and self-signed/expired status."
+        "protocol, cipher suite, key type, chain, and self-signed/expired status. "
+        "Grades the certificate A+ through F based on protocol, key strength, "
+        "validity, cipher, and chain completeness."
     ),
     parameters={
         "host": {
@@ -1299,17 +1471,29 @@ def _format_cert_report(report: CertReport) -> str:
             "description": "TLS port (default 443).",
             "default": 443,
         },
+        "include_jarm": {
+            "type": "boolean",
+            "description": "Compute JARM TLS fingerprint (slower, ~10-40s extra).",
+            "default": False,
+        },
     },
 )
 async def ghost_cert(
     host: str,
     port: int = 443,
+    include_jarm: bool = False,
 ) -> str:
     """Inspect the TLS certificate of a host."""
     if not host:
         return "Error: host is required."
 
     report = await inspect_cert(host, port=port)
+
+    # Optionally compute JARM fingerprint
+    if include_jarm and not report.error:
+        jarm_hash = await jarm_fingerprint(host, port=port)
+        report.jarm_hash = jarm_hash
+
     return _format_cert_report(report)
 
 
