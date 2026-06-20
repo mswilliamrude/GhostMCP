@@ -12,7 +12,7 @@ Designed as both a **development workflow accelerator** (find answers faster) an
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
 
-**v0.5.0** — 24 tools, 1,011 unit tests + 35 integration tests, all passing.
+**v0.5.2** — 26 tools, 1,409 unit tests + 35 integration tests, all passing.
 
 ---
 
@@ -41,7 +41,7 @@ pip install curl_cffi
 pip install playwright && playwright install chromium
 
 # Verify it works
-python3 -m pytest tests/ -v    # 1,011 unit tests, all passing
+python3 -m pytest tests/ -v    # 1,409 unit tests, all passing
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
 ```
 
@@ -95,7 +95,7 @@ Restart your MCP client after adding the configuration.
 
 ## MCP Tools
 
-GhostMCP exposes 24 tools via the Model Context Protocol, organized into four categories:
+GhostMCP exposes 26 tools via the Model Context Protocol, organized into four categories:
 
 ---
 
@@ -103,12 +103,12 @@ GhostMCP exposes 24 tools via the Model Context Protocol, organized into four ca
 
 #### `ghost_search` — Anonymous Web Search
 
-Search the web using multiple engines with automatic fallback. Engines are tried in order: Serper (if API key set) → Google (HTML scrape) → DuckDuckGo Lite.
+Search the web using multiple engines with intelligent round-robin rotation. Supported engines: serper, brave, bing, google, duckduckgo.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | (required) | Search query |
-| `engine` | string | `"auto"` | Engine: `auto`, `serper`, `google`, `duckduckgo` |
+| `engine` | string | `"auto"` | Engine: `auto`, `serper`, `brave`, `bing`, `google`, `duckduckgo` |
 | `paranoia` | string | `"cautious"` | OpSec level: `casual`, `cautious`, `ghost`, `midnight` |
 | `num_results` | integer | `10` | Number of results (max 100) |
 
@@ -215,7 +215,7 @@ Look up an indicator (URL, IP, domain, hash) across multiple threat feeds: URLha
 
 #### `ghost_cert` — TLS Certificate Inspection
 
-Connect to a host, pull the TLS certificate, and report subject, issuer, expiry, SANs, fingerprint, protocol, cipher suite, key type, chain, and self-signed/expired status. **No API key required.**
+Connect to a host, pull the TLS certificate, and report subject, issuer, expiry, SANs, fingerprint, protocol, cipher suite, key type, chain, and self-signed/expired status. Includes A+ through F security grading with optional JARM TLS fingerprinting. **No API key required.**
 
 ---
 
@@ -295,6 +295,18 @@ VIN (Vehicle Identification Number) decode, safety recall lookup, and consumer c
 
 ---
 
+#### `ghost_media` — Media Search
+
+Search for images, videos, or news via Brave Search API. Returns direct URLs, thumbnails, dimensions, duration, and source domains. **Requires `GHOST_BRAVE_KEY`.**
+
+---
+
+#### `ghost_auth_session` — Ephemeral Authentication Sessions
+
+Create and manage ephemeral authentication sessions. Sessions are memory-only, auto-expire, and origin-locked. Supports bearer, cookie, basic, and form-based login via Playwright. **No API key required** (requires Playwright for form-based login).
+
+---
+
 #### `ghost_report` — Composite Background Report
 
 Orchestrates multiple ghost tools (phone, email, username, breach, court, IP) into a unified background report for a subject. Generates a structured summary with cross-referenced findings. **No additional API key** (uses keys configured for individual tools).
@@ -324,13 +336,16 @@ GhostMCP/
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py              # Entry point: python3 -m src
-│   ├── mcp.py                   # MCP server (24 tools, JSON-RPC stdio)
+│   ├── mcp.py                   # MCP server (26 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations
 │   │   ├── base.py              # SearchResult dataclass, SearchEngine ABC, rate limiter
 │   │   ├── duckduckgo.py        # DDG Lite scraper (POST, 202 retry)
 │   │   ├── google.py            # Google HTML SERP scraper (CAPTCHA detection)
 │   │   └── serper.py            # Serper.dev REST API (requires key)
+│   ├── stealth/                 # Anti-detection and fingerprint evasion
+│   ├── auth/                    # Authentication session management
+│   ├── captcha/                 # CAPTCHA solving integrations
 │   ├── dorking/                 # Google dork query builder
 │   │   ├── builder.py           # build_dork() + from_template()
 │   │   └── templates.py         # 12 predefined dork templates
@@ -360,7 +375,7 @@ GhostMCP/
 │   │   └── asn.py               # BGP/ASN network reconnaissance
 │   └── utils/
 │       └── config.py            # ParanoiaLevel enum, Config dataclass
-├── tests/                       # 1,011 unit tests + 35 integration tests
+├── tests/                       # 1,409 unit tests + 35 integration tests
 │   ├── conftest.py              # Shared fixtures, markers
 │   ├── test_base.py             # SearchResult, exceptions, rate limiter
 │   ├── test_dorking.py          # Dork builder + templates
@@ -421,6 +436,9 @@ GhostMCP/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERPER_API_KEY` | (none) | Serper.dev API key (enables Google-quality results) |
+| `GHOST_BING_KEY` | (none) | Bing Search API key (enables Bing engine) |
+| `GHOST_CAPTCHA_KEY` | (none) | CAPTCHA solving service API key |
+| `GHOST_CAPTCHA_SERVICE` | (none) | CAPTCHA service provider (e.g., 2captcha, anticaptcha) |
 | `VT_API_KEY` | (none) | VirusTotal API key (enables AV detection lookups) |
 
 ### API Keys — People Search
@@ -469,7 +487,7 @@ All API keys are **optional**. Core functionality (search, dorking, fetch, recon
 ```bash
 cd GhostMCP
 
-# Unit tests (1,011 tests, all mocked, no network)
+# Unit tests (1,409 tests, all mocked, no network)
 python3 -m pytest tests/ -v
 
 # Integration tests (35 tests, hits live free APIs)
@@ -492,7 +510,7 @@ python3 -m pytest tests/test_phone.py -v
 
 | Marker | Count | Description |
 |--------|-------|-------------|
-| (default) | 1,011 | Unit tests — fully mocked, no network, run everywhere |
+| (default) | 1,409 | Unit tests — fully mocked, no network, run everywhere |
 | `integration` | 35 | Integration tests — hit live free APIs (crt.sh, NVD, ip-api, NHTSA) |
 | `paid` | 13 | Paid API tests — require keys, skipped if env vars not set |
 
@@ -502,7 +520,7 @@ Tests are configured in `conftest.py` to skip `integration` and `paid` markers b
 
 ## Design Principles
 
-- **Free by default** — All core functionality works without API keys (18 of 24 tools need no keys)
+- **Free by default** — All core functionality works without API keys (19 of 26 tools need no keys)
 - **No footprint** — Stealth headers, proxy support, Tor integration
 - **Standalone** — Runs independently, but callable from any MCP client
 - **Modular engines** — Add new search engines without touching core

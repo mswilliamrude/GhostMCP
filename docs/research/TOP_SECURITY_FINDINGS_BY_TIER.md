@@ -52,6 +52,22 @@ Each finding was validated against at least one of:
 
 ---
 
+### Evidence Quality Notes
+
+**Prevalence percentages** in this document are attributed to specific sources:
+- 42Crunch State of API Security 2026: https://42crunch.com/state-of-api-security-2026-report/
+- ZeroThreat API Security Statistics: https://zerothreat.ai/blog/api-security-statistics
+- Nordic APIs 2026 Vulnerabilities: https://nordicapis.com/the-5-most-common-api-vulnerabilities-in-2026/
+- OWASP: https://owasp.org/www-project-api-security/
+
+**Tier 2 evidence quality:** Public disclosure of API authorization vulnerabilities is uncommon due to responsible disclosure practices and NDA constraints. Tier 2 findings rely primarily on aggregated statistics from 42Crunch's corpus of 200 real-world API vulnerabilities and APISecurity.io's anonymized newsletter disclosures, rather than named incidents with full post-mortems. Where specific companies are named (23andMe, Optus, Securden, Authy), the incidents were publicly reported via news media or vendor advisories.
+
+**Temporal data:** All pricing, statistics, and incident data were gathered in June 2026 via Perplexity sonar-pro (which referenced the original sources listed in each finding's References section). Validate current data directly with vendors.
+
+**This is a living document.** Version and validation dates are tracked in the Revision History at the bottom.
+
+---
+
 
 ## Tier 1 — Passive Reconnaissance Findings
 
