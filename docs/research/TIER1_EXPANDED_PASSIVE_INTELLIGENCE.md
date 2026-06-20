@@ -930,3 +930,154 @@ ghost_cert (TLS handshake — enhanced)
 **Total passive footprint per target:** 1 HTTP GET + 10-15 DoH queries + 1 TLS handshake + 10 JARM probes
 **Equivalent to:** Visiting the site in a browser + running `dig` a few times + checking SSL Labs
 **Legal status:** Completely passive observation of publicly-advertised configurations
+
+---
+
+## 10. API Discovery — Passive (Tier 1) vs Active (Tier 2)
+
+### 10.1 Tier 1: Published API Surface (Passive)
+
+These are paths the target explicitly makes available — fetching them is identical to what any API consumer does:
+
+| Path / Method | What We Fetch | What It Reveals |
+|---|---|---|
+| `/swagger.json`, `/swagger/v1/swagger.json` | OpenAPI 2.0 spec | Full API schema — endpoints, methods, parameters, auth requirements, models |
+| `/openapi.json`, `/openapi.yaml`, `/api-docs` | OpenAPI 3.0/3.1 spec | Same — newer spec format, richer type info |
+| `/docs`, `/redoc`, `/api/docs` | API documentation pages | Human-readable endpoint listing, sometimes with try-it-out buttons |
+| `/graphql` (POST introspection query) | GraphQL schema | Complete type system — queries, mutations, subscriptions, fields, arguments |
+| `/robots.txt` | Disallow directives | Paths the site doesn't want crawled — often reveals admin panels, API routes, internal tools |
+| `/sitemap.xml` | URL inventory | All pages/endpoints the site wants indexed |
+| `/.well-known/openid-configuration` | OIDC discovery | Auth provider (Okta, Auth0, Keycloak, Azure AD), token endpoints, scopes, grant types |
+| `/.well-known/security.txt` | Security contact | Responsible disclosure contact, PGP key, hiring link, acknowledgments |
+| `/.well-known/change-password` | Password change URL | Reveals auth system endpoint |
+| `/.well-known/assetlinks.json` | Android app links | Mobile app associations |
+| `/.well-known/apple-app-site-association` | iOS app links | Apple universal links |
+| `OPTIONS /api/*` (CORS preflight) | CORS policy | Allowed methods, headers, origins — reveals API capabilities |
+| `?wsdl` on known paths | SOAP WSDL definition | Legacy SOAP API schema |
+| Response headers on any endpoint | `Link:` header (HATEOAS) | Related API endpoints, pagination |
+| Error format on `/api/` | Framework error page | Django REST ("detail": "Not found"), FastAPI ({"detail": ...}), Spring Boot (timestamp+status+error), Express (stack trace) |
+
+**Total requests:** ~15-20 GETs to well-known paths. Same traffic as any developer reading the API docs.
+
+### 10.2 What `ghost_api` Would Return
+
+```python
+@dataclass
+class APIDiscoveryReport:
+    url: str
+
+    # Published specs
+    openapi_spec: dict | None      # parsed swagger/openapi JSON if found
+    openapi_url: str | None        # where we found it
+    openapi_version: str | None    # "2.0", "3.0.3", "3.1.0"
+    graphql_introspection: dict | None  # schema if introspection enabled
+    graphql_url: str | None
+    wsdl: str | None               # WSDL XML if found
+
+    # Well-known paths
+    robots_txt: dict | None        # {allowed: [...], disallowed: [...], sitemaps: [...]}
+    sitemap_urls: list[str]
+    security_txt: dict | None      # {contact, encryption, policy, hiring, acknowledgments}
+    oidc_config: dict | None       # OpenID Connect discovery document
+    oidc_provider: str | None      # "Auth0", "Okta", "Keycloak", "Azure AD", etc.
+
+    # API surface
+    endpoints_discovered: int
+    methods_available: list[str]   # from CORS OPTIONS or spec
+    api_versions: list[dict]       # [{version: "v1", status: "active"}, {version: "v2", status: "404"}]
+
+    # Framework fingerprint
+    framework: str | None          # "FastAPI", "Django REST", "Spring Boot", "Express", etc.
+    framework_evidence: str        # how we determined it
+
+    # CORS
+    cors_policy: dict | None       # {origin, credentials, methods, headers}
+
+    # Sensitive findings
+    sensitive_paths: list[dict]    # [{path, reason}] — debug endpoints, admin panels from robots.txt
+    warnings: list[str]
+
+    search_urls: dict[str, str]
+    error: str | None = None
+```
+
+### 10.3 Tier 2 Boundary (Out of Scope Without Authorization)
+
+These cross the line from "reading published information" to "probing for undisclosed attack surface":
+
+| Method | Why It's Tier 2 |
+|---|---|
+| Brute-forcing API paths (`/admin`, `/users`, `/internal`, `/debug`) | Guessing paths not published — active probing |
+| Fuzzing parameters (send malformed input) | Attack payload territory |
+| Trying default credentials (`admin/admin`, API keys) | Authentication bypass attempt |
+| Forced browsing (IDOR testing on `/users/1`, `/users/2`) | Accessing unauthorized resources |
+| Method tampering (PUT/DELETE on GET-only endpoints) | Unexpected mutation testing |
+| GraphQL batching/depth attacks | DoS / abuse testing |
+| Rate limit testing (intentional flooding) | Availability testing |
+
+### 10.4 Implementation Notes
+
+**Swagger/OpenAPI discovery paths to check (ordered by frequency):**
+```python
+OPENAPI_PATHS = [
+    "/swagger.json",
+    "/openapi.json",
+    "/api-docs",
+    "/swagger/v1/swagger.json",
+    "/api/swagger.json",
+    "/api/v1/swagger.json",
+    "/api/v2/swagger.json",
+    "/v1/api-docs",
+    "/v2/api-docs",
+    "/v3/api-docs",
+    "/openapi.yaml",
+    "/swagger.yaml",
+    "/docs",
+    "/redoc",
+    "/api/docs",
+    "/api/openapi.json",
+]
+```
+
+**GraphQL introspection query:**
+```graphql
+{
+  __schema {
+    queryType { name }
+    mutationType { name }
+    types {
+      name
+      kind
+      fields { name type { name kind } }
+    }
+  }
+}
+```
+
+**Framework fingerprinting from error responses:**
+```python
+FRAMEWORK_FINGERPRINTS = {
+    "FastAPI":       {"pattern": '"detail":', "path": "/nonexistent", "status": 404},
+    "Django REST":   {"pattern": '"detail":"Not found"', "path": "/api/", "status": 404},
+    "Spring Boot":   {"pattern": '"timestamp"', "path": "/error", "status": 404},
+    "Express":       {"pattern": "Cannot GET", "path": "/nonexistent", "status": 404},
+    "Laravel":       {"pattern": "Symfony", "path": "/nonexistent", "status": 404},
+    "ASP.NET":       {"pattern": "X-AspNet-Version", "path": "/", "status": 200},
+    "Flask":         {"pattern": "Werkzeug", "path": "/nonexistent", "status": 404},
+    "Rails":         {"pattern": "ActionController", "path": "/nonexistent", "status": 404},
+}
+```
+
+**OIDC provider identification from discovery document:**
+```python
+OIDC_PROVIDERS = {
+    "auth0.com": "Auth0",
+    "okta.com": "Okta",
+    "login.microsoftonline.com": "Azure AD",
+    "accounts.google.com": "Google",
+    "cognito-idp": "AWS Cognito",
+    "keycloak": "Keycloak",
+    "auth.pingone.com": "PingOne",
+    "login.salesforce.com": "Salesforce",
+}
+```

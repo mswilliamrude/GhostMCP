@@ -140,6 +140,62 @@ Date: 2026-06-19
 
 ---
 
+## Feature Request: `ghost_api` — Passive API Surface Discovery (Tier 1)
+
+### Problem
+During reconnaissance, knowing that a target runs an API is only half the picture. The full API schema — endpoints, methods, parameters, authentication requirements — is often publicly available via standard discovery paths (Swagger, OpenAPI, GraphQL introspection, OIDC discovery). Currently GhostMCP can find subdomains and tech stack but can't tell an agent "this site has 34 API endpoints, uses Auth0 for auth, runs FastAPI, and has GraphQL introspection wide open."
+
+### Proposed Solution
+
+#### `ghost_api` — Passive API Discovery
+```
+Input: URL (base URL of target)
+Output: {
+  openapi_spec: full parsed spec if found (endpoints, methods, params, models),
+  graphql_schema: type system if introspection enabled,
+  robots_txt: allowed/disallowed paths,
+  security_txt: contact, policy, encryption,
+  oidc_config: auth provider + token endpoints,
+  framework: identified framework + evidence,
+  cors_policy: origin/credentials/methods analysis,
+  api_versions: active vs deprecated versions,
+  sensitive_paths: debug endpoints, admin panels from robots.txt,
+  endpoints_discovered: total count,
+}
+```
+
+#### What It Checks (all Tier 1 — published paths only)
+- ~16 common OpenAPI/Swagger paths
+- GraphQL introspection query
+- `/robots.txt` and `/sitemap.xml`
+- `/.well-known/openid-configuration`, `/.well-known/security.txt`
+- CORS preflight (OPTIONS request)
+- WSDL endpoints
+- Framework fingerprinting from error response format
+
+#### What It Does NOT Do (Tier 2 — requires authorization)
+- No path brute-forcing / forced browsing
+- No parameter fuzzing
+- No credential testing
+- No method tampering
+- No rate limit probing
+
+#### Why This Is Passive
+Every path we check is something the target explicitly publishes for API consumers. Fetching `/swagger.json` is identical to what any developer does when integrating with the API. GraphQL introspection is a built-in feature, not an exploit — if it's on, they chose to leave it on.
+
+### Effort: ~2 days (~300 lines)
+### Dependencies: None (httpx only)
+### Priority: MEDIUM
+
+### Research Reference
+- See `docs/research/TIER1_EXPANDED_PASSIVE_INTELLIGENCE.md` Section 10
+
+---
+Filed by: OpenCode agent during GhostMCP v0.4.0 session
+Date: 2026-06-19
+
+---
+
 ## Feature Request: Active DAST Scanning (Tier 2 — Out of Scope Without Authorization)
 
 ### IMPORTANT: Legal & Ethical Constraints
