@@ -219,6 +219,7 @@ from .engines.brave import BraveEngine
 from .engines.duckduckgo import DuckDuckGoEngine
 from .engines.google import GoogleEngine
 from .engines.serper import SerperEngine
+from .engines.rotator import EngineRotator
 from .dorking.builder import build_dork, from_template
 from .dorking.templates import get_template_names
 from .proxy.manager import ProxyManager
@@ -243,6 +244,67 @@ from .recon.asn import ASNReport, asn_lookup
 from .recon.headers import HeadersReport, analyze_headers, grade_headers
 from .recon.api_discovery import APIDiscoveryReport, api_discover
 from .utils.config import ParanoiaLevel
+
+
+# ---------------------------------------------------------------------------
+# Engine Rotator Singleton — lazily initialized on first use
+# ---------------------------------------------------------------------------
+
+_rotator: Optional[EngineRotator] = None
+_rotator_paranoia: Optional[str] = None
+
+
+def _get_rotator(paranoia: str = "cautious") -> EngineRotator:
+    """Get or create the module-level engine rotator singleton.
+
+    The rotator persists across requests within the same process.
+    Re-created if paranoia level changes (proxy config differs).
+    """
+    global _rotator, _rotator_paranoia
+
+    if _rotator is not None and _rotator_paranoia == paranoia:
+        return _rotator
+
+    proxy = _get_proxy(paranoia)
+    rotator = EngineRotator()
+
+    # Register API engines (preferred — no CAPTCHA risk)
+    serper = SerperEngine(proxy=proxy)
+    if serper.available:
+        rotator.register(
+            serper,
+            is_api=True,
+            max_per_window=40,  # Conservative: 40 per 10 min (Serper: 2500/month ≈ ~83/day)
+            base_cooldown=30.0,
+        )
+
+    brave = BraveEngine(proxy=proxy)
+    if brave.available:
+        rotator.register(
+            brave,
+            is_api=True,
+            max_per_window=30,  # Conservative: 30 per 10 min (Brave: 2000/month ≈ ~67/day)
+            base_cooldown=30.0,
+        )
+
+    # Register scraper engines (fallback — CAPTCHA risk)
+    rotator.register(
+        GoogleEngine(proxy=proxy, paranoia=paranoia),
+        is_api=False,
+        max_per_window=10,  # Google is aggressive about rate limiting
+        base_cooldown=120.0,  # 2 min base cooldown for Google
+    )
+
+    rotator.register(
+        DuckDuckGoEngine(proxy=proxy),
+        is_api=False,
+        max_per_window=15,  # DDG is less aggressive than Google
+        base_cooldown=60.0,
+    )
+
+    _rotator = rotator
+    _rotator_paranoia = paranoia
+    return _rotator
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +480,11 @@ def _format_results(results: list[SearchResult]) -> str:
         "query": {"type": "string", "description": "Search query string."},
         "engine": {
             "type": "string",
-            "description": "Engine: auto, serper, brave, google, duckduckgo. Auto tries serper -> brave -> google -> duckduckgo.",
+            "description": (
+                "Engine: auto, serper, brave, google, duckduckgo, status. "
+                "Auto uses intelligent round-robin rotation across available engines. "
+                "Use 'status' to see engine health and rotation state."
+            ),
             "default": "auto",
         },
         "paranoia": {
@@ -443,35 +509,39 @@ async def ghost_search(
     proxy = _get_proxy(paranoia)
     num_results = min(max(1, int(num_results)), 100)
 
+    # Status mode — return rotator health info
+    if engine == "status":
+        rotator = _get_rotator(paranoia)
+        status = rotator.get_status()
+        if not status:
+            return "No engines registered. Check API keys and configuration."
+        lines = ["Engine Rotator Status", "=" * 40, ""]
+        for name, info in status.items():
+            avail = "AVAILABLE" if info["available"] else "UNAVAILABLE"
+            engine_type = "API" if info["is_api"] else "Scraper"
+            lines.append(f"[{name}] ({engine_type}) — {avail}")
+            lines.append(f"  Window: {info['requests_in_window']}/{info['max_per_window']} requests")
+            lines.append(f"  Lifetime: {info['successes']} ok / {info['failures']} fail / {info['total']} total")
+            if info["consecutive_failures"] > 0:
+                lines.append(f"  Consecutive failures: {info['consecutive_failures']}")
+            if info["cooldown_remaining"] > 0:
+                lines.append(f"  Cooldown: {info['cooldown_remaining']:.0f}s remaining")
+            lines.append("")
+        return "\n".join(lines)
+
+    # Auto mode — use intelligent rotator
     if engine == "auto":
-        engines_to_try = []
-
-        serper = SerperEngine(proxy=proxy)
-        if serper.available:
-            engines_to_try.append(serper)
-
-        brave = BraveEngine(proxy=proxy)
-        if brave.available:
-            engines_to_try.append(brave)
-
-        engines_to_try.append(GoogleEngine(proxy=proxy, paranoia=paranoia))
-        engines_to_try.append(DuckDuckGoEngine(proxy=proxy))
-
-        last_error = None
-        for eng in engines_to_try:
-            try:
-                results = await eng.search(query, num_results=num_results)
-                if results:
-                    header = f"[{eng.name}] Results for: {query}\n\n"
-                    return header + _format_results(results)
-            except SearchEngineError as e:
-                last_error = e
-                continue
-
-        if last_error:
-            return f"All engines failed. Last error: {last_error}"
+        rotator = _get_rotator(paranoia)
+        results, engine_used = await rotator.search(query, num_results=num_results)
+        if results:
+            header = f"[{engine_used}] Results for: {query}\n\n"
+            return header + _format_results(results)
+        # All engines failed
+        if engine_used:
+            return f"All engines failed. Last error: {engine_used}"
         return "No results found across all engines."
 
+    # Explicit engine — bypass rotation, use directly
     eng_map = {
         "serper": lambda: SerperEngine(proxy=proxy),
         "brave": lambda: BraveEngine(proxy=proxy),
@@ -480,7 +550,7 @@ async def ghost_search(
     }
 
     if engine not in eng_map:
-        return f"Unknown engine '{engine}'. Available: {', '.join(eng_map.keys())}"
+        return f"Unknown engine '{engine}'. Available: auto, {', '.join(eng_map.keys())}, status"
 
     try:
         eng_instance = eng_map[engine]()

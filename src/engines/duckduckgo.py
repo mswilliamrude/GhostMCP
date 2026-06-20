@@ -1,15 +1,24 @@
-"""DuckDuckGo Lite search engine scraper."""
+"""DuckDuckGo Lite search engine scraper with optional TLS fingerprint mimicry."""
 
 from __future__ import annotations
 
 import asyncio
 import re
+import sys
 from html import unescape
+from typing import Optional
 from urllib.parse import unquote, urlparse, parse_qs
 
 import httpx
 
-from .base import SearchEngine, SearchResult, SearchEngineError
+from .base import SearchEngine, SearchResult, SearchEngineError, RateLimitError
+
+# Try curl_cffi for TLS fingerprint mimicry (looks like a real browser)
+try:
+    from curl_cffi.requests import AsyncSession as CurlSession
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
 
 
 class DuckDuckGoEngine(SearchEngine):
@@ -18,6 +27,7 @@ class DuckDuckGoEngine(SearchEngine):
     Uses the lightweight lite.duckduckgo.com endpoint (table-based HTML).
     More reliable than html.duckduckgo.com which returns 202/blocks.
     Supports proxy passthrough for ghost/midnight paranoia modes.
+    Uses curl_cffi for TLS fingerprint mimicry when available.
     """
 
     name = "duckduckgo"
@@ -33,6 +43,7 @@ class DuckDuckGoEngine(SearchEngine):
         """Search DuckDuckGo via Lite HTML endpoint.
 
         Handles DDG's 202 throttle responses with exponential backoff retry.
+        Uses curl_cffi when available for TLS fingerprint consistency.
 
         Args:
             query: Search query string.
@@ -43,12 +54,72 @@ class DuckDuckGoEngine(SearchEngine):
         """
         await self._rate_limit()
 
+        if HAS_CURL_CFFI:
+            html = await self._fetch_curl(query)
+        else:
+            html = await self._fetch_httpx(query)
+
+        if html is None:
+            return []
+
+        return self._parse_lite_html(html, num_results)
+
+    async def _fetch_curl(self, query: str) -> Optional[str]:
+        """Fetch DDG Lite using curl_cffi with Chrome TLS fingerprint."""
+        proxy_url = self.proxy.get("all") if self.proxy else None
+        max_retries = 3
+        backoff = 5.0
+
+        headers = {
+            "User-Agent": self.USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        try:
+            async with CurlSession() as session:
+                for attempt in range(max_retries):
+                    resp = await session.post(
+                        self.BASE_URL,
+                        data={"q": query, "kl": ""},
+                        headers=headers,
+                        proxy=proxy_url,
+                        impersonate="chrome124",
+                        timeout=30,
+                        allow_redirects=True,
+                    )
+
+                    if resp.status_code == 202:
+                        # DDG throttle — wait and retry
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(backoff * (attempt + 1))
+                            continue
+                        return None
+
+                    if resp.status_code == 429:
+                        raise RateLimitError(self.name, "Rate limited by DuckDuckGo")
+
+                    if resp.status_code != 200:
+                        raise SearchEngineError(
+                            self.name, f"HTTP {resp.status_code}"
+                        )
+                    return resp.text
+        except (RateLimitError, SearchEngineError):
+            raise
+        except Exception as e:
+            raise SearchEngineError(self.name, f"curl_cffi request failed: {e}")
+
+        return None
+
+    async def _fetch_httpx(self, query: str) -> Optional[str]:
+        """Fetch DDG Lite using httpx (fallback when curl_cffi not available)."""
         transport = None
         if self.proxy:
             transport = httpx.AsyncHTTPTransport(proxy=self.proxy.get("all"))
 
         max_retries = 3
-        backoff = 5.0  # DDG throttles aggressively; 5s base backoff
+        backoff = 5.0
 
         try:
             async with httpx.AsyncClient(
@@ -71,20 +142,18 @@ class DuckDuckGoEngine(SearchEngine):
                         if attempt < max_retries - 1:
                             await asyncio.sleep(backoff * (attempt + 1))
                             continue
-                        # Final attempt still 202 — return empty
-                        return []
+                        return None
 
                     resp.raise_for_status()
-                    break
+                    return resp.text
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                from .base import RateLimitError
                 raise RateLimitError(self.name, "Rate limited by DuckDuckGo")
             raise SearchEngineError(self.name, f"HTTP {e.response.status_code}")
         except httpx.RequestError as e:
             raise SearchEngineError(self.name, f"Request failed: {e}")
 
-        return self._parse_lite_html(resp.text, num_results)
+        return None
 
     def _parse_lite_html(self, html: str, num_results: int) -> list[SearchResult]:
         """Parse DuckDuckGo Lite results page.
