@@ -58,6 +58,13 @@ RUN groupadd -r ghost && useradd -r -g ghost -d /app -s /bin/bash ghost && \
     mkdir -p /app/.cache && chown -R ghost:ghost /app && \
     mkdir -p /tmp/ghostmcp_ratelimit && chown ghost:ghost /tmp/ghostmcp_ratelimit
 
+# Install Playwright Chromium browser binary
+# (Until render layer is adopted, this stays in base)
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN playwright install chromium && \
+    playwright install-deps chromium && \
+    chown -R ghost:ghost /app/.cache
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
