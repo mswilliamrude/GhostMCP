@@ -499,7 +499,7 @@ class TestASNLookup:
 
     @pytest.mark.asyncio
     async def test_all_endpoints_fail(self):
-        """All 4 ASN data endpoints fail → report with asn set but empty data."""
+        """All 4 ASN data endpoints fail → report with asn set, error message, and investigation URLs."""
         mock_get = _mock_bgpview_get({
             "/asn/99999/prefixes": (500, {"status": "error"}),
             "/asn/99999/peers": (500, {"status": "error"}),
@@ -510,11 +510,14 @@ class TestASNLookup:
         with patch("httpx.AsyncClient.get", mock_get):
             report = await asn_lookup("99999")
 
-        # No hard error — we resolved the ASN, just couldn't fetch data
-        assert report.error is None
+        # Error reported when all endpoints fail
+        assert report.error is not None
+        assert "unreachable" in report.error.lower()
         assert report.asn == 99999
         assert report.asn_name == ""
         assert report.prefix_count_v4 == 0
+        # Investigation URLs still populated for manual lookup
+        assert "bgpview" in report.investigation_urls
 
     @pytest.mark.asyncio
     async def test_bgpview_timeout(self):

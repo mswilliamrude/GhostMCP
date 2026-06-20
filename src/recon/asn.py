@@ -370,11 +370,19 @@ async def asn_lookup(query: str, query_type: str = "") -> ASNReport:
     _parse_peers(report, peers)
     _parse_ixs(report, ixs)
 
+    # Detect total API failure (all endpoints returned None)
+    if all(x is None for x in (details, prefixes, peers, ixs)):
+        report.error = (
+            f"BGPView API unreachable for AS{asn_num} "
+            f"(DNS resolution or connectivity failure). "
+            f"Investigation URLs provided for manual lookup."
+        )
+
     # Country from details or fallback
     if report.country_code and not report.country:
         report.country = report.country_code
 
-    # Investigation URLs
+    # Investigation URLs (always populated, even on API failure)
     report.investigation_urls = _generate_investigation_urls(asn_num)
 
     return report
