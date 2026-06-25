@@ -42,6 +42,69 @@ if command -v az &>/dev/null; then
     HAS_AZ=true
 fi
 
+# --- Container runtime detection ---
+# Priority: --podman flag > az acr (Windows + Azure) > docker > podman
+# Falls back to podman if docker isn't available (rootless, no sudo needed)
+FORCE_PODMAN=false
+for arg in "$@"; do
+    if [ "$arg" = "--podman" ]; then
+        FORCE_PODMAN=true
+        break
+    fi
+done
+
+detect_container_runtime() {
+    if [ "$FORCE_PODMAN" = true ]; then
+        if command -v podman &>/dev/null; then
+            echo "podman"
+        else
+            echo "[ERROR] --podman requested but podman not found" >&2
+            echo "none"
+        fi
+        return
+    fi
+    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+        echo "az"  # Azure ACR builds from Windows
+        return
+    fi
+    if command -v docker &>/dev/null; then
+        # Check if docker actually works (daemon running, permissions ok)
+        if sudo docker info &>/dev/null 2>&1; then
+            echo "docker"
+            return
+        fi
+        # Docker exists but daemon not running — try podman
+        if command -v podman &>/dev/null; then
+            echo "podman"
+            return
+        fi
+        # Docker exists but broken, no podman fallback
+        echo "docker"
+        return
+    fi
+    if command -v podman &>/dev/null; then
+        echo "podman"
+        return
+    fi
+    echo "none"
+}
+
+CONTAINER_RUNTIME=$(detect_container_runtime)
+
+# Set the runtime command — podman doesn't need sudo
+case "$CONTAINER_RUNTIME" in
+    docker) CTR="sudo docker" ;;
+    podman) CTR="podman" ;;
+    az)     CTR="sudo docker" ;;  # Local operations still use docker on az systems
+    none)
+        echo "[ERROR] No container runtime found."
+        echo "        Install one of: docker, podman"
+        echo "        On Fedora/RHEL: sudo dnf install podman"
+        echo "        On Ubuntu/Debian: sudo apt install podman"
+        exit 1
+        ;;
+esac
+
 # --- Configuration ---
 GHOST_IMAGE="${GHOST_IMAGE:-ghostmcp:latest}"
 GHOST_IMAGE_BASE="${GHOST_IMAGE_BASE:-ghostmcp-base:latest}"
@@ -91,11 +154,11 @@ echo "[INFO] Working directory: $SRC_DIR"
 
 # --- Helper functions ---
 container_running() {
-    sudo docker inspect -f '{{.State.Running}}' "$GHOST_CONTAINER" 2>/dev/null | grep -q "true"
+    $CTR inspect -f '{{.State.Running}}' "$GHOST_CONTAINER" 2>/dev/null | grep -q "true"
 }
 
 container_exists() {
-    sudo docker inspect "$GHOST_CONTAINER" &>/dev/null
+    $CTR inspect "$GHOST_CONTAINER" &>/dev/null
 }
 
 # --- Commands ---
@@ -119,7 +182,7 @@ cmd_build() {
 
 _build_base() {
     local no_cache_flag="${1:-}"
-    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+    if [ "$CONTAINER_RUNTIME" = "az" ]; then
         echo "[INFO] Building ${GHOST_ACR_IMAGE_BASE}:latest via ACR..."
         pushd "$SRC_DIR" >/dev/null
         az acr build \
@@ -133,12 +196,12 @@ _build_base() {
         popd >/dev/null
         echo "[INFO] Base image built: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE_BASE}:latest"
     else
-        echo "[INFO] Building base image locally: $GHOST_IMAGE_BASE"
-        sudo docker build -t "$GHOST_IMAGE_BASE" \
+        echo "[INFO] Building base image locally: $GHOST_IMAGE_BASE (runtime: $CONTAINER_RUNTIME)"
+        $CTR build -t "$GHOST_IMAGE_BASE" \
             -f "$SRC_DIR/Dockerfile.base" \
             ${no_cache_flag:+--no-cache} \
             "$SRC_DIR"
-        echo "[INFO] Base built: $(sudo docker images "${GHOST_IMAGE_BASE%:*}" --format '{{.Size}}')"
+        echo "[INFO] Base built: $($CTR images "${GHOST_IMAGE_BASE%:*}" --format '{{.Size}}' 2>/dev/null || echo 'unknown')"
     fi
 }
 
@@ -148,7 +211,7 @@ _build_app() {
     local git_branch=$(git branch --show-current 2>/dev/null || echo "unknown")
     local build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    if [ "$HAS_AZ" = true ] && [ "$PLATFORM" = "msys2" ]; then
+    if [ "$CONTAINER_RUNTIME" = "az" ]; then
         echo "[INFO] Building ${GHOST_ACR_IMAGE}:latest via ACR (using ${GHOST_ACR_IMAGE_BASE}:latest)..."
         pushd "$SRC_DIR" >/dev/null
         az acr build \
@@ -167,8 +230,8 @@ _build_app() {
         popd >/dev/null
         echo "[INFO] App image built: ${GHOST_ACR_SERVER}/${GHOST_ACR_IMAGE}:latest"
     else
-        echo "[INFO] Building app image locally: $GHOST_IMAGE (using $GHOST_IMAGE_BASE)"
-        sudo docker build -t "$GHOST_IMAGE" \
+        echo "[INFO] Building app image locally: $GHOST_IMAGE (runtime: $CONTAINER_RUNTIME)"
+        $CTR build -t "$GHOST_IMAGE" \
             -f "$SRC_DIR/Dockerfile" \
             --build-arg "ACR_SERVER=${GHOST_IMAGE_BASE%:*}" \
             --build-arg "GIT_COMMIT=$git_commit" \
@@ -177,7 +240,7 @@ _build_app() {
             --build-arg "CACHE_BUST=$(date +%s)" \
             ${no_cache_flag:+--no-cache} \
             "$SRC_DIR"
-        echo "[INFO] App built: $(sudo docker images "${GHOST_IMAGE%:*}" --format '{{.Size}}')"
+        echo "[INFO] App built: $($CTR images "${GHOST_IMAGE%:*}" --format '{{.Size}}' 2>/dev/null || echo 'unknown')"
     fi
 }
 
@@ -190,10 +253,10 @@ cmd_run() {
 
     if container_exists; then
         echo "[INFO] Starting existing container $GHOST_CONTAINER"
-        sudo docker start "$GHOST_CONTAINER"
+        $CTR start "$GHOST_CONTAINER"
     else
-        echo "[INFO] Creating and starting $GHOST_CONTAINER"
-        sudo docker run -d \
+        echo "[INFO] Creating and starting $GHOST_CONTAINER (runtime: $CONTAINER_RUNTIME)"
+        $CTR run -d \
             --name "$GHOST_CONTAINER" \
             -p "${GHOST_SSH_PORT}:22" \
             -v /tmp/ghostmcp_ratelimit:/tmp/ghostmcp_ratelimit \
@@ -220,7 +283,7 @@ cmd_run() {
 cmd_stop() {
     if container_exists; then
         echo "[INFO] Stopping and removing $GHOST_CONTAINER"
-        sudo docker rm -f "$GHOST_CONTAINER"
+        $CTR rm -f "$GHOST_CONTAINER"
     else
         echo "[INFO] Container $GHOST_CONTAINER not found"
     fi
@@ -234,6 +297,7 @@ cmd_restart() {
 
 cmd_status() {
     echo "[INFO] === GhostMCP Container Status ==="
+    echo "Runtime: $CONTAINER_RUNTIME ($CTR)"
     if container_running; then
         echo "State:     Running"
         echo "Container: $GHOST_CONTAINER"
@@ -241,10 +305,10 @@ cmd_status() {
         echo "SSH:       ssh -p $GHOST_SSH_PORT root@localhost"
         echo ""
         echo "Ports:"
-        sudo docker port "$GHOST_CONTAINER" 2>/dev/null | sed 's/^/  /'
+        $CTR port "$GHOST_CONTAINER" 2>/dev/null | sed 's/^/  /'
         echo ""
         echo "Uptime:"
-        sudo docker inspect -f '{{.State.StartedAt}}' "$GHOST_CONTAINER" | sed 's/^/  Started: /'
+        $CTR inspect -f '{{.State.StartedAt}}' "$GHOST_CONTAINER" | sed 's/^/  Started: /'
     elif container_exists; then
         echo "State:     Stopped"
         echo "Container: $GHOST_CONTAINER exists but is not running"
@@ -258,7 +322,7 @@ cmd_status() {
 
 cmd_logs() {
     if container_exists; then
-        sudo docker logs --tail 50 "$GHOST_CONTAINER"
+        $CTR logs --tail 50 "$GHOST_CONTAINER"
     else
         echo "[ERROR] Container $GHOST_CONTAINER not found"
         exit 1
@@ -292,7 +356,7 @@ cmd_mcp() {
     fi
     echo "[INFO] Testing MCP tools/list..."
     echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | \
-        sudo docker exec -i "$GHOST_CONTAINER" python3 -m src 2>/dev/null | \
+        $CTR exec -i "$GHOST_CONTAINER" python3 -m src 2>/dev/null | \
         python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -308,7 +372,7 @@ cmd_shell() {
         echo "[ERROR] Container $GHOST_CONTAINER is not running"
         exit 1
     fi
-    sudo docker exec -it "$GHOST_CONTAINER" /bin/bash
+    $CTR exec -it "$GHOST_CONTAINER" /bin/bash
 }
 
 cmd_sync() {
@@ -456,6 +520,13 @@ cmd_teardown() {
 }
 
 # --- Main dispatch ---
+# Strip --podman from args before dispatching
+ARGS=()
+for arg in "$@"; do
+    [ "$arg" != "--podman" ] && ARGS+=("$arg")
+done
+set -- "${ARGS[@]:-help}"
+
 case "${1:-help}" in
     build)    cmd_build "$@" ;;
     run)      cmd_run ;;
@@ -477,7 +548,7 @@ case "${1:-help}" in
         echo "Usage: build-ghostmcp <command> [target] [options]"
         echo ""
         echo "Commands:"
-        echo "  build [target]  Build Docker image (target: base, app, all. Default: app)"
+        echo "  build [target]  Build container image (target: base, app, all. Default: app)"
         echo "  run             Start persistent container (background + SSH)"
         echo "  stop            Stop and remove container"
         echo "  restart         Stop + run"
@@ -492,17 +563,29 @@ case "${1:-help}" in
         echo "  deploy          Deploy to Azure Container Instances"
         echo "  teardown        Delete ACI container group"
         echo ""
+        echo "Options:"
+        echo "  --podman        Force podman runtime (overrides auto-detection)"
+        echo "  --no-cache      Build without layer cache"
+        echo ""
         echo "Build targets:"
         echo "  base            OS + Python deps + Playwright + Chromium (slow, changes rarely)"
         echo "  app             App code only on top of base (fast, every commit)"
         echo "  all             Build base then app"
         echo ""
-        echo "Examples:"
-        echo "  build-ghostmcp build base          # First time: build the heavy base image"
-        echo "  build-ghostmcp build                # Subsequent: just rebuild app layer (fast)"
-        echo "  build-ghostmcp build all --no-cache # Full rebuild, no cache"
+        echo "Runtime detection (current: $CONTAINER_RUNTIME):"
+        echo "  1. --podman flag → podman (forced)"
+        echo "  2. Windows + az CLI → Azure ACR remote build"
+        echo "  3. docker daemon running → docker (with sudo)"
+        echo "  4. podman available → podman (rootless, no sudo)"
         echo ""
-        echo "Platform: $PLATFORM (az cli: $HAS_AZ)"
+        echo "Examples:"
+        echo "  build-ghostmcp build base            # Build heavy base image"
+        echo "  build-ghostmcp build                  # Rebuild app layer (fast)"
+        echo "  build-ghostmcp build all --no-cache   # Full rebuild, no cache"
+        echo "  build-ghostmcp build --podman         # Force podman for build"
+        echo "  build-ghostmcp run --podman           # Run container with podman"
+        echo ""
+        echo "Platform: $PLATFORM | Runtime: $CONTAINER_RUNTIME | az cli: $HAS_AZ"
         echo ""
         echo "Environment:"
         echo "  GHOST_IMAGE=$GHOST_IMAGE"
