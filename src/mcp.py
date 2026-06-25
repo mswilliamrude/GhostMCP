@@ -703,6 +703,143 @@ async def ghost_media(
 
 
 @mcp.tool(
+    name="ghost_perplexity",
+    description=(
+        "Query Perplexity AI for search-augmented answers with citations. "
+        "Perplexity combines web search with LLM synthesis to provide "
+        "grounded, cited answers. Best for research questions, technical "
+        "lookups, current events, and anything needing up-to-date sources. "
+        "Requires GHOST_PERPLEXITY_KEY environment variable."
+    ),
+    parameters={
+        "query": {
+            "type": "string",
+            "description": "The research question or search query.",
+        },
+        "model": {
+            "type": "string",
+            "description": (
+                "Perplexity model: sonar (fast, cheap), sonar-pro (better, "
+                "more sources), sonar-deep-research (thorough, slow). Default: sonar-pro."
+            ),
+            "default": "sonar-pro",
+        },
+        "search_recency": {
+            "type": "string",
+            "description": (
+                "Filter results by time: month, week, day, hour. "
+                "Empty string = no time filter."
+            ),
+            "default": "",
+        },
+    },
+)
+async def ghost_perplexity(
+    query: str,
+    model: str = "sonar-pro",
+    search_recency: str = "",
+) -> str:
+    """Query Perplexity for search-augmented answers with citations."""
+    if not query:
+        return "Error: query is required."
+
+    api_key = os.environ.get("GHOST_PERPLEXITY_KEY", "")
+    if not api_key:
+        return (
+            "Error: GHOST_PERPLEXITY_KEY not set.\n"
+            "Get an API key at: https://www.perplexity.ai/settings/api\n"
+            "Then set: export GHOST_PERPLEXITY_KEY=pplx-..."
+        )
+
+    valid_models = {"sonar", "sonar-pro", "sonar-deep-research"}
+    if model not in valid_models:
+        return f"Error: unknown model '{model}'. Use: {', '.join(sorted(valid_models))}"
+
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a research assistant. Provide detailed, accurate answers "
+                "with specific citations. Include URLs for sources when available."
+            ),
+        },
+        {"role": "user", "content": query},
+    ]
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+    }
+
+    if search_recency:
+        valid_recency = {"month", "week", "day", "hour"}
+        if search_recency in valid_recency:
+            payload["search_recency_filter"] = search_recency
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+
+            if resp.status_code == 401:
+                return "Error: Invalid GHOST_PERPLEXITY_KEY (401 Unauthorized)."
+            if resp.status_code == 429:
+                return "Error: Perplexity rate limit exceeded. Try again later."
+            if resp.status_code != 200:
+                return f"Error: Perplexity API returned {resp.status_code}: {resp.text[:200]}"
+
+            data = resp.json()
+
+        # Extract the answer
+        choices = data.get("choices", [])
+        if not choices:
+            return "Error: No response from Perplexity."
+
+        answer = choices[0].get("message", {}).get("content", "")
+        if not answer:
+            return "Error: Empty response from Perplexity."
+
+        # Extract citations if present
+        citations = data.get("citations", [])
+
+        # Build formatted output
+        lines = [f"[perplexity/{model}] Research: {query}", ""]
+        lines.append(answer)
+
+        if citations:
+            lines.append("")
+            lines.append("--- Sources ---")
+            for i, cite in enumerate(citations, 1):
+                if isinstance(cite, str):
+                    lines.append(f"  [{i}] {cite}")
+                elif isinstance(cite, dict):
+                    lines.append(f"  [{i}] {cite.get('url', cite.get('title', str(cite)))}")
+
+        # Token usage info
+        usage = data.get("usage", {})
+        if usage:
+            lines.append("")
+            lines.append(
+                f"Tokens: {usage.get('prompt_tokens', '?')} in / "
+                f"{usage.get('completion_tokens', '?')} out"
+            )
+
+        return "\n".join(lines)
+
+    except httpx.TimeoutException:
+        return f"Error: Perplexity request timed out (model={model}, query may be too complex)."
+    except httpx.ConnectError as e:
+        return f"Error: Cannot connect to Perplexity API: {e}"
+    except Exception as e:
+        return f"Error: Perplexity query failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool(
     name="ghost_dork",
     description=(
         "Build and optionally execute a Google dork query. Use predefined templates "
