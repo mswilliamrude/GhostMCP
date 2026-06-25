@@ -102,7 +102,13 @@ class TestGetHeaders:
     def test_accept_encoding_value(self):
         h = get_headers()
         assert "gzip" in h["Accept-Encoding"]
-        assert "br" in h["Accept-Encoding"]
+        assert "deflate" in h["Accept-Encoding"]
+        # 'br' (brotli) is only advertised if the brotli package is installed
+        try:
+            import brotli  # noqa: F401
+            assert "br" in h["Accept-Encoding"]
+        except ImportError:
+            assert "br" not in h["Accept-Encoding"]
 
     def test_connection_keep_alive(self):
         h = get_headers()

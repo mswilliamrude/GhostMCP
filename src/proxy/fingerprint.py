@@ -60,11 +60,18 @@ def get_headers(paranoia_level: Optional[str | ParanoiaLevel] = None) -> dict[st
     ua = random.choice(_ALL_UAS)
     lang = random.choice(_ACCEPT_LANGUAGES)
 
+    # Only advertise brotli if the package is installed (httpx auto-decodes when available)
+    try:
+        import brotli  # noqa: F401
+        accept_encoding = "gzip, deflate, br"
+    except ImportError:
+        accept_encoding = "gzip, deflate"
+
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": lang,
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": accept_encoding,
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
