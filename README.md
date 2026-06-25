@@ -12,7 +12,7 @@ Designed as both a **development workflow accelerator** (find answers faster) an
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
 
-**v0.5.2** — 26 tools, 1,409 unit tests + 35 integration tests, all passing.
+**v0.5.2** — 27 tools, 1,453 unit tests + 35 integration tests, all passing.
 
 ---
 
@@ -41,7 +41,7 @@ pip install curl_cffi
 pip install playwright && playwright install chromium
 
 # Verify it works
-python3 -m pytest tests/ -v    # 1,409 unit tests, all passing
+python3 -m pytest tests/ -v    # 1,453 unit tests, all passing
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
 ```
 
@@ -95,7 +95,7 @@ Restart your MCP client after adding the configuration.
 
 ## MCP Tools
 
-GhostMCP exposes 26 tools via the Model Context Protocol, organized into four categories:
+GhostMCP exposes 27 tools via the Model Context Protocol, organized into four categories:
 
 ---
 
@@ -301,6 +301,12 @@ Search for images, videos, or news via Brave Search API. Returns direct URLs, th
 
 ---
 
+#### `ghost_perplexity` — AI Research with Citations
+
+Query Perplexity AI for search-augmented answers with source citations. Best for research questions, technical lookups, current events, and anything needing up-to-date grounded answers. Models: `sonar` (fast), `sonar-pro` (default, better sources), `sonar-deep-research` (thorough). **Requires `GHOST_PERPLEXITY_KEY`.**
+
+---
+
 #### `ghost_auth_session` — Ephemeral Authentication Sessions
 
 Create and manage ephemeral authentication sessions. Sessions are memory-only, auto-expire, and origin-locked. Supports bearer, cookie, basic, and form-based login via Playwright. **No API key required** (requires Playwright for form-based login).
@@ -336,7 +342,7 @@ GhostMCP/
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py              # Entry point: python3 -m src
-│   ├── mcp.py                   # MCP server (26 tools, JSON-RPC stdio)
+│   ├── mcp.py                   # MCP server (27 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations
 │   │   ├── base.py              # SearchResult dataclass, SearchEngine ABC, rate limiter
@@ -375,7 +381,7 @@ GhostMCP/
 │   │   └── asn.py               # BGP/ASN network reconnaissance
 │   └── utils/
 │       └── config.py            # ParanoiaLevel enum, Config dataclass
-├── tests/                       # 1,409 unit tests + 35 integration tests
+├── tests/                       # 1,453 unit tests + 35 integration tests
 │   ├── conftest.py              # Shared fixtures, markers
 │   ├── test_base.py             # SearchResult, exceptions, rate limiter
 │   ├── test_dorking.py          # Dork builder + templates
@@ -435,6 +441,8 @@ GhostMCP/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GHOST_BRAVE_KEY` | (none) | Brave Search API key (2,000 free queries/month) |
+| `GHOST_PERPLEXITY_KEY` | (none) | Perplexity AI API key (search-augmented research) |
 | `SERPER_API_KEY` | (none) | Serper.dev API key (enables Google-quality results) |
 | `GHOST_BING_KEY` | (none) | Bing Search API key (enables Bing engine) |
 | `GHOST_CAPTCHA_KEY` | (none) | CAPTCHA solving service API key |
@@ -520,7 +528,7 @@ Tests are configured in `conftest.py` to skip `integration` and `paid` markers b
 
 ## Design Principles
 
-- **Free by default** — All core functionality works without API keys (19 of 26 tools need no keys)
+- **Free by default** — All core functionality works without API keys (19 of 27 tools need no keys)
 - **No footprint** — Stealth headers, proxy support, Tor integration
 - **Standalone** — Runs independently, but callable from any MCP client
 - **Modular engines** — Add new search engines without touching core
