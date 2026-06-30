@@ -7,8 +7,11 @@ services:
     environment:
       - GHOST_PARANOIA=cautious
       - GHOST_MIN_DELAY=2.0
+      # Internal SearXNG instance (no config needed)
+      - GHOST_SEARXNG_URL=http://searxng:8080
       # Optional API keys:
       # - SERPER_API_KEY=
+      # - GHOST_REGRID_KEY=
       # - VT_API_KEY=
     volumes:
       - /tmp/ghostmcp_ratelimit:/tmp/ghostmcp_ratelimit
@@ -19,3 +22,42 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    depends_on:
+      searxng:
+        condition: service_healthy
+    networks:
+      - ghostnet
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ghostmcp-searxng
+    volumes:
+      - ./config/searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+      - SEARXNG_SECRET_KEY=ghostmcp-internal-only
+    expose:
+      - "8080"  # Internal only - not exposed to host
+    # Uncomment to expose SearXNG UI for debugging:
+    # ports:
+    #   - "8888:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/searxng
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - ghostnet
+
+networks:
+  ghostnet:
+    driver: bridge

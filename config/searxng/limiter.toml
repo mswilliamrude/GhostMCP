@@ -1,0 +1,20 @@
+# SearXNG rate limiter configuration for GhostMCP
+# Internal use only - very permissive limits
+# Docs: https://docs.searxng.org/admin/settings/settings_limiter.html
+
+[botdetection.ip_limit]
+# Disable IP-based rate limiting for internal use
+link_token = false
+
+[botdetection.ip_lists]
+# No blocklists for internal use
+block_ip = []
+pass_ip = [
+    # Docker internal networks
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "10.0.0.0/8",
+    # Localhost
+    "127.0.0.0/8",
+    "::1",
+]

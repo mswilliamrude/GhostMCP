@@ -1,0 +1,173 @@
+# SearXNG configuration for GhostMCP internal use
+# Optimized for API access and OSINT research
+# Docs: https://docs.searxng.org/admin/settings/settings.html
+
+general:
+  debug: false
+  instance_name: "GhostMCP SearXNG"
+  donation_url: false
+  contact_url: false
+  privacypolicy_url: false
+
+search:
+  # Enable JSON format for API access (critical!)
+  formats:
+    - html
+    - json
+  safe_search: 0  # Disable safe search for OSINT
+  autocomplete: ""
+  default_lang: "en"
+
+server:
+  # Internal use only - disable limiter
+  limiter: false
+  image_proxy: false  # Don't proxy images (API use)
+  method: "GET"
+  secret_key: "ghostmcp-internal-searxng-key"
+  # Bind to all interfaces inside container
+  bind_address: "0.0.0.0"
+  port: 8080
+
+ui:
+  # Minimal UI config (mainly using API)
+  static_use_hash: true
+  default_theme: simple
+  results_on_new_tab: false
+  infinite_scroll: false
+
+outgoing:
+  # Request settings for upstream search engines
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+  # Uncomment for Tor routing:
+  # proxies:
+  #   all://:
+  #     - socks5h://tor:9050
+
+# Engine configuration
+# Enable engines useful for OSINT, disable noisy ones
+engines:
+  # === General Search ===
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+    
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+    
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+    
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false
+
+  # === Code & Tech ===
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+    
+  - name: gitlab
+    engine: gitlab
+    shortcut: gl
+    disabled: false
+    
+  - name: stackoverflow
+    engine: stackexchange
+    shortcut: so
+    categories: [it, q&a]
+    disabled: false
+
+  # === Reference ===
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+    
+  - name: wikidata
+    engine: wikidata
+    shortcut: wd
+    disabled: false
+    
+  - name: arxiv
+    engine: arxiv
+    shortcut: arxiv
+    disabled: false
+
+  # === Files & Documents ===
+  - name: google scholar
+    engine: google_scholar
+    shortcut: gsc
+    disabled: false
+    
+  - name: z-library
+    engine: zlibrary
+    shortcut: zlib
+    disabled: true  # Legal gray area
+
+  # === News ===
+  - name: google news
+    engine: google_news
+    shortcut: gn
+    disabled: false
+    
+  - name: bing news
+    engine: bing_news
+    shortcut: bn
+    disabled: false
+
+  # === Security Research ===
+  - name: cvedetails
+    engine: xpath
+    shortcut: cve
+    search_url: https://www.cvedetails.com/google-search-results.php?q={query}
+    results_xpath: //div[@class="searchresult"]
+    url_xpath: ./a/@href
+    title_xpath: ./a
+    content_xpath: ./div[@class="searchresult"]
+    disabled: true  # Custom engine, may need tweaking
+
+  # === Social (careful with these) ===
+  - name: reddit
+    engine: reddit
+    shortcut: r
+    disabled: false
+    
+  - name: twitter
+    engine: twitter
+    shortcut: tw
+    disabled: true  # Often rate limited
+
+  # === Disable noisy/slow engines ===
+  - name: yahoo
+    engine: yahoo
+    disabled: true
+    
+  - name: qwant
+    engine: qwant
+    disabled: true
+    
+  - name: startpage
+    engine: startpage
+    disabled: true  # Often blocked
+
+# Categories for filtering
+categories_as_tabs:
+  general:
+  images:
+  videos:
+  news:
+  science:
+  files:
+  it:
+  social media:

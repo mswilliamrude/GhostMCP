@@ -12,7 +12,7 @@ Designed as both a **development workflow accelerator** (find answers faster) an
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
 
-**v0.5.2** — 27 tools, 1,453 unit tests + 35 integration tests, all passing.
+**v0.5.2** — 29 tools, 1,453 unit tests + 35 integration tests, all passing.
 
 ---
 
@@ -60,6 +60,57 @@ pacman -S mingw-w64-ucrt-x86_64-python-httpx mingw-w64-ucrt-x86_64-python-websoc
 python3 ghost_client.py --config ~/.ghost_client.yaml
 ```
 
+### Docker (Recommended)
+
+Run GhostMCP with all services (including internal SearXNG for metasearch):
+
+```bash
+# Start everything
+docker compose up -d
+
+# Check status
+docker compose ps
+
+# View logs
+docker compose logs -f ghostmcp
+
+# Stop
+docker compose down
+```
+
+This starts:
+- **ghostmcp** — Main MCP server on port 8080
+- **searxng** — Internal metasearch engine (not exposed externally)
+
+The internal SearXNG instance is pre-configured for API access and OSINT-optimized engine selection. No additional setup required — `ghost_searxng` works out of the box.
+
+#### Docker Environment Variables
+
+```bash
+# In docker-compose.yml or .env file:
+GHOST_PARANOIA=cautious          # OpSec level: casual, cautious, ghost, midnight
+GHOST_MIN_DELAY=2.0              # Minimum delay between requests
+GHOST_SEARXNG_URL=http://searxng:8080  # Auto-configured
+
+# Optional API keys (add to docker-compose.yml):
+SERPER_API_KEY=xxx               # Google search via Serper
+GHOST_REGRID_KEY=xxx             # Property/parcel data via Regrid
+VT_API_KEY=xxx                   # VirusTotal lookups
+GHOST_HIBP_KEY=xxx               # Have I Been Pwned breach checks
+```
+
+#### Exposing SearXNG UI (Optional)
+
+To access the SearXNG web interface for debugging:
+
+```yaml
+# In docker-compose.yml, uncomment:
+services:
+  searxng:
+    ports:
+      - "8888:8080"  # Access at http://localhost:8888
+```
+
 ### MCP Client Configuration
 
 #### opencode / Claude Desktop / Cursor
@@ -95,7 +146,7 @@ Restart your MCP client after adding the configuration.
 
 ## MCP Tools
 
-GhostMCP exposes 27 tools via the Model Context Protocol, organized into four categories:
+GhostMCP exposes 29 tools via the Model Context Protocol, organized into four categories:
 
 ---
 
@@ -119,6 +170,30 @@ Search the web using multiple engines with intelligent round-robin rotation. Sup
 "Search for Python asyncio best practices 2024"
 → ghost_search(query="Python asyncio best practices 2024")
 → Returns: 10 results with titles, URLs, and snippets
+```
+
+---
+
+#### `ghost_searxng` — SearXNG Metasearch
+
+Search using a SearXNG instance — aggregates results from 70+ search engines without tracking. Requires `GHOST_SEARXNG_URL` environment variable (auto-configured when using Docker Compose).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | string | (required) | Search query |
+| `categories` | string | `"general"` | Categories: `general`, `images`, `news`, `videos`, `files`, `it`, `science` |
+| `engines` | string | `""` | Specific engines: `google`, `bing`, `duckduckgo`, `wikipedia`, `github` |
+| `time_range` | string | `""` | Time filter: `day`, `week`, `month`, `year` |
+| `language` | string | `"en"` | Language code |
+| `num_results` | integer | `10` | Number of results |
+
+**Background:** SearXNG is a privacy-focused metasearch engine that aggregates results from multiple sources. When using Docker Compose, an internal SearXNG instance is automatically available with API access enabled and OSINT-optimized engine configuration.
+
+**Example usage:**
+```
+"Search for CVE-2024 exploits using SearXNG"
+→ ghost_searxng(query="CVE-2024 remote code execution", categories="it", time_range="month")
+→ Returns: Results from Google, Bing, GitHub, StackOverflow aggregated
 ```
 
 ---
@@ -292,6 +367,33 @@ BGP/ASN network infrastructure reconnaissance. Query by ASN number, IP address, 
 #### `ghost_vin` — Vehicle Identification
 
 VIN (Vehicle Identification Number) decode, safety recall lookup, and consumer complaint search via NHTSA APIs. Returns make, model, year, plant, and safety history. **No API key required.**
+
+---
+
+#### `ghost_gis` — Property & Parcel Lookup
+
+Look up property/parcel data by address, coordinates, or parcel ID. Returns owner name, mailing address, assessed value, zoning, acreage, and generates investigation URLs for people search and county assessor sites.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `address` | string | `""` | Street address to look up |
+| `lat` | float | `0.0` | Latitude (for coordinate lookup) |
+| `lon` | float | `0.0` | Longitude (for coordinate lookup) |
+| `parcel_id` | string | `""` | Direct parcel ID lookup |
+| `provider` | string | `"auto"` | Data source: `auto`, `regrid`, `state` |
+
+**Data Sources:**
+- **Regrid API** (nationwide, 25 free/day with `GHOST_REGRID_KEY`)
+- **State GIS** (TX 222 counties, FL 67, NY 40+, CO 32+) — free, no key
+
+**Owner Type Detection:** Automatically classifies owners as individual, LLC, trust, corporation, partnership, financial institution, or government entity.
+
+**Example usage:**
+```
+"Who owns 1600 Pennsylvania Ave NW, Washington DC?"
+→ ghost_gis(address="1600 Pennsylvania Ave NW, Washington DC")
+→ Returns: Owner, mailing address, value, plus TruePeopleSearch/OpenCorporates URLs
+```
 
 ---
 
