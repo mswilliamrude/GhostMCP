@@ -1663,32 +1663,64 @@ async def ghost_render(
 ) -> str:
     """Render a page with headless browser and capture console output."""
     
-    # For localhost URLs with a bridge connected, fetch via bridge first
-    # then render the HTML content with Playwright locally
+    # For localhost URLs with a bridge connected, do a REAL navigation and
+    # proxy every same-origin request through the bridge. This makes a
+    # multi-file SPA (external js/css, /api XHRs, localStorage) actually load
+    # and execute — unlike the old data: URL trick which broke all of that.
     if _should_use_bridge(url):
-        bridge_resp = await _fetch_via_bridge(url)
-        if "error" in bridge_resp:
-            return f"Bridge error: {bridge_resp['error']}"
-        
-        # Got the HTML via bridge — now render it with Playwright
-        # using a data: URL so Playwright executes the JS locally
-        html_content = bridge_resp.get("body", "")
-        if not html_content:
-            return f"Bridge returned empty response for {url}"
-        
-        # Render the bridged HTML through Playwright
         from .recon.render import render_page as _render
-        import base64
-        data_url = "data:text/html;base64," + base64.b64encode(html_content.encode()).decode()
+        from urllib.parse import urlparse as _urlparse
+
+        _target = _urlparse(url)
+        _origin_host = _target.hostname
+        _origin_port = _target.port or 80
+
+        # Headers that must not be forwarded into route.fulfill (the browser
+        # recomputes them; passing encoded/length headers corrupts the body).
+        _strip = {"content-encoding", "content-length", "transfer-encoding",
+                  "connection", "keep-alive"}
+
+        async def _bridge_route(route, request):
+            try:
+                rp = _urlparse(request.url)
+                same_origin = (
+                    rp.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
+                    and (rp.port or 80) == _origin_port
+                )
+                if not same_origin:
+                    # External (CDN, fonts, etc.) — let the GhostMCP host fetch directly.
+                    await route.continue_()
+                    return
+                resp = await _fetch_via_bridge(
+                    request.url,
+                    method=request.method,
+                    headers=dict(request.headers),
+                    body=request.post_data,
+                )
+                if "error" in resp:
+                    await route.abort()
+                    return
+                hdrs = {k: v for k, v in (resp.get("headers") or {}).items()
+                        if k.lower() not in _strip}
+                await route.fulfill(
+                    status=resp.get("status", 200),
+                    headers=hdrs,
+                    body=resp.get("body", "") or "",
+                )
+            except Exception:
+                try:
+                    await route.abort()
+                except Exception:
+                    pass
+
         report = await _render(
-            url=data_url,
+            url=url,
             wait_ms=wait,
             execute_js=execute,
             capture_screenshot=screenshot,
+            route_handler=_bridge_route,
         )
-        # Override the URL in the report for clarity
-        report.url = url
-        report.final_url = url + " (via bridge)"
+        report.final_url = (report.final_url or url) + " (via bridge)"
     else:
         report = await render_page(
             url=url,

@@ -30,6 +30,7 @@ async def render_page(
     capture_screenshot: bool = False,
     screenshot_path: str = "/tmp/ghostmcp_screenshot.png",
     timeout_ms: int = 30000,
+    route_handler=None,
 ) -> RenderReport:
     """Render a page with headless Chromium and capture console output.
 
@@ -40,6 +41,12 @@ async def render_page(
         capture_screenshot: Whether to take a screenshot.
         screenshot_path: Where to save the screenshot.
         timeout_ms: Total timeout for the operation.
+        route_handler: Optional async callable(route, request) installed via
+            page.route("**/*", ...). Used to proxy same-origin requests through
+            a connectivity bridge so a multi-file SPA actually loads and runs
+            (instead of the data: URL trick which breaks relative URLs,
+            /api calls and localStorage). When None, the browser navigates and
+            fetches normally.
 
     Returns:
         RenderReport with rendered DOM, console output, and JS errors.
@@ -95,6 +102,11 @@ async def render_page(
 
             # Capture JS errors (uncaught exceptions)
             page.on("pageerror", lambda err: report.js_errors.append(str(err)))
+
+            # Install request router (e.g. proxy same-origin requests through a
+            # connectivity bridge) so a real navigation works for isolated SPAs.
+            if route_handler is not None:
+                await page.route("**/*", route_handler)
 
             # Navigate
             import time
