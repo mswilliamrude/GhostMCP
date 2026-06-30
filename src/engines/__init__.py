@@ -5,6 +5,7 @@ from .bing import BingEngine
 from .duckduckgo import DuckDuckGoEngine
 from .google import GoogleEngine
 from .serper import SerperEngine
+from .searxng import SearXNGEngine
 from .rotator import EngineRotator, EngineState
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "DuckDuckGoEngine",
     "GoogleEngine",
     "SerperEngine",
+    "SearXNGEngine",
     "EngineRotator",
     "EngineState",
 ]

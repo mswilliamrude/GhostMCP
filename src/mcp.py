@@ -221,6 +221,7 @@ from .engines.bing import BingEngine
 from .engines.duckduckgo import DuckDuckGoEngine
 from .engines.google import GoogleEngine
 from .engines.serper import SerperEngine
+from .engines.searxng import SearXNGEngine
 from .engines.rotator import EngineRotator
 from .dorking.builder import build_dork, from_template
 from .dorking.templates import get_template_names
@@ -245,6 +246,7 @@ from .recon.dns_intel import DNSReport, dns_lookup
 from .recon.asn import ASNReport, asn_lookup
 from .recon.headers import HeadersReport, analyze_headers, grade_headers
 from .recon.api_discovery import APIDiscoveryReport, api_discover
+from .recon.gis import GISResult, GISError, gis_lookup, geocode_address
 from .utils.config import ParanoiaLevel
 
 
@@ -296,6 +298,16 @@ def _get_rotator(paranoia: str = "cautious") -> EngineRotator:
             is_api=True,
             max_per_window=20,  # Conservative: 20 per 10 min
             base_cooldown=30.0,
+        )
+
+    # SearXNG — self-hosted metasearch (API-based, no CAPTCHA)
+    searxng = SearXNGEngine(proxy=proxy)
+    if searxng.available:
+        rotator.register(
+            searxng,
+            is_api=True,
+            max_per_window=50,  # Self-hosted = generous limits
+            base_cooldown=15.0,  # Quick recovery
         )
 
     # Register scraper engines (fallback — CAPTCHA risk)
@@ -492,7 +504,7 @@ def _format_results(results: list[SearchResult]) -> str:
         "engine": {
             "type": "string",
             "description": (
-                "Engine: auto, serper, brave, google, duckduckgo, status. "
+                "Engine: auto, serper, brave, bing, google, duckduckgo, searxng, status. "
                 "Auto uses intelligent round-robin rotation across available engines. "
                 "Use 'status' to see engine health and rotation state."
             ),
@@ -559,6 +571,7 @@ async def ghost_search(
         "bing": lambda: BingEngine(proxy=proxy),
         "google": lambda: GoogleEngine(proxy=proxy, paranoia=paranoia),
         "duckduckgo": lambda: DuckDuckGoEngine(proxy=proxy),
+        "searxng": lambda: SearXNGEngine(proxy=proxy),
     }
 
     if engine not in eng_map:
@@ -700,6 +713,119 @@ async def ghost_media(
             return header + _format_news_results(results)
     except SearchEngineError as e:
         return f"Media search error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# SearXNG metasearch tool — direct access with full parameter control
+# ---------------------------------------------------------------------------
+
+@mcp.tool(
+    name="ghost_searxng",
+    description=(
+        "Search via SearXNG metasearch engine — aggregates results from Google, Bing, "
+        "DuckDuckGo, Wikipedia, Reddit, GitHub, and 70+ other engines without tracking. "
+        "Requires GHOST_SEARXNG_URL pointing to a SearXNG instance."
+    ),
+    parameters={
+        "query": {"type": "string", "description": "Search query string."},
+        "categories": {
+            "type": "string",
+            "description": (
+                "Comma-separated categories: general, images, news, science, it, files, social media. "
+                "Default: general."
+            ),
+            "default": "general",
+        },
+        "engines": {
+            "type": "string",
+            "description": (
+                "Comma-separated engines to use (empty = all in category). "
+                "Examples: google, bing, duckduckgo, wikipedia, reddit, github, arxiv, stackoverflow."
+            ),
+            "default": "",
+        },
+        "time_range": {
+            "type": "string",
+            "description": "Time filter: day, week, month, year. Empty = no filter.",
+            "default": "",
+        },
+        "language": {
+            "type": "string",
+            "description": "Language code (e.g., 'en', 'de', 'fr'). Default: en.",
+            "default": "en",
+        },
+        "num_results": {
+            "type": "integer",
+            "description": "Number of results (default 10, max 50).",
+            "default": 10,
+        },
+    },
+)
+async def ghost_searxng(
+    query: str,
+    categories: str = "general",
+    engines: str = "",
+    time_range: str = "",
+    language: str = "en",
+    num_results: int = 10,
+) -> str:
+    """Search via SearXNG metasearch engine with full parameter control."""
+    if not query:
+        return "Error: query is required."
+
+    num_results = min(max(1, int(num_results)), 50)
+
+    engine = SearXNGEngine()
+
+    if not engine.available:
+        return (
+            "Error: GHOST_SEARXNG_URL not set. "
+            "Point it to a SearXNG instance:\n"
+            "  1. Self-host: docker run -p 8888:8080 searxng/searxng\n"
+            "  2. Or use a public instance from https://searx.space/\n"
+            "  3. Export: export GHOST_SEARXNG_URL='http://localhost:8888'"
+        )
+
+    try:
+        results = await engine.search(
+            query=query,
+            num_results=num_results,
+            categories=categories,
+            engines=engines,
+            language=language,
+            time_range=time_range,
+        )
+
+        if not results:
+            return f"No results found for: {query}"
+
+        # Format results
+        lines = [f"[searxng] Results for: {query}", ""]
+
+        if categories != "general":
+            lines.append(f"Categories: {categories}")
+        if engines:
+            lines.append(f"Engines: {engines}")
+        if time_range:
+            lines.append(f"Time range: {time_range}")
+        if categories != "general" or engines or time_range:
+            lines.append("")
+
+        for i, r in enumerate(results, 1):
+            lines.append(f"{i}. {r.title}")
+            lines.append(f"   URL: {r.url}")
+            if r.snippet:
+                lines.append(f"   {r.snippet[:300]}")
+            # Show which engine provided this result
+            if ":" in r.source_engine:
+                _, src = r.source_engine.split(":", 1)
+                lines.append(f"   Source: {src}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except SearchEngineError as e:
+        return f"SearXNG error: {e}"
 
 
 @mcp.tool(
@@ -2011,6 +2137,215 @@ def _format_email_report(r: EmailReport) -> str:
         for name, url in r.search_urls.items():
             lines.append(f"  {name}: {url}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# GIS Property Lookup Tool
+# ---------------------------------------------------------------------------
+
+def _format_gis_result(r: GISResult) -> str:
+    """Format GIS lookup result as readable text."""
+    lines = [f"=== Property Record: {r.address or r.parcel_id} ===", ""]
+    
+    # Property identification
+    lines.append("PROPERTY")
+    if r.parcel_id:
+        lines.append(f"  Parcel ID:     {r.parcel_id}")
+    if r.address:
+        addr_line = r.address
+        if r.city:
+            addr_line += f", {r.city}"
+        if r.state:
+            addr_line += f", {r.state}"
+        if r.zip_code:
+            addr_line += f" {r.zip_code}"
+        lines.append(f"  Address:       {addr_line}")
+    if r.county:
+        lines.append(f"  County:        {r.county}")
+    if r.coordinates[0]:
+        lines.append(f"  Coordinates:   {r.coordinates[0]:.6f}, {r.coordinates[1]:.6f}")
+    
+    # Land info
+    if r.acreage or r.zoning or r.land_use:
+        lines.append("")
+        lines.append("LAND")
+        if r.acreage:
+            lines.append(f"  Acreage:       {r.acreage:.2f} acres")
+        if r.zoning:
+            lines.append(f"  Zoning:        {r.zoning}")
+        if r.land_use:
+            lines.append(f"  Land Use:      {r.land_use}")
+        if r.legal_description:
+            lines.append(f"  Legal Desc:    {r.legal_description[:100]}...")
+    
+    # Valuation
+    if r.total_value or r.land_value:
+        lines.append("")
+        lines.append("VALUATION")
+        if r.land_value:
+            lines.append(f"  Land Value:    ${r.land_value:,.0f}")
+        if r.improvement_value:
+            lines.append(f"  Improvements:  ${r.improvement_value:,.0f}")
+        if r.total_value:
+            lines.append(f"  Total Value:   ${r.total_value:,.0f}")
+        if r.tax_year:
+            lines.append(f"  Tax Year:      {r.tax_year}")
+    
+    # Building info
+    if r.year_built or r.building_sqft:
+        lines.append("")
+        lines.append("BUILDING")
+        if r.year_built:
+            lines.append(f"  Year Built:    {r.year_built}")
+        if r.building_sqft:
+            lines.append(f"  Square Feet:   {r.building_sqft:,}")
+        if r.bedrooms:
+            lines.append(f"  Bedrooms:      {r.bedrooms}")
+        if r.bathrooms:
+            lines.append(f"  Bathrooms:     {r.bathrooms}")
+    
+    # Owner info
+    if r.owner_name:
+        lines.append("")
+        lines.append("OWNER")
+        lines.append(f"  Name:          {r.owner_name}")
+        lines.append(f"  Type:          {r.owner_type}")
+        if r.mailing_address:
+            mail_line = r.mailing_address
+            if r.mailing_city:
+                mail_line += f", {r.mailing_city}"
+            if r.mailing_state:
+                mail_line += f", {r.mailing_state}"
+            if r.mailing_zip:
+                mail_line += f" {r.mailing_zip}"
+            lines.append(f"  Mailing Addr:  {mail_line}")
+    
+    # Enrichment (alternate addresses, phones, emails)
+    if r.alternate_addresses:
+        lines.append("")
+        lines.append("ALTERNATE ADDRESSES")
+        for addr in r.alternate_addresses[:5]:
+            lines.append(f"  - {addr}")
+    
+    if r.phone_numbers:
+        lines.append("")
+        lines.append("PHONE NUMBERS")
+        for phone in r.phone_numbers[:5]:
+            lines.append(f"  - {phone}")
+    
+    if r.email_addresses:
+        lines.append("")
+        lines.append("EMAIL ADDRESSES")
+        for email in r.email_addresses[:5]:
+            lines.append(f"  - {email}")
+    
+    if r.associated_names:
+        lines.append("")
+        lines.append("ASSOCIATED NAMES")
+        for name in r.associated_names[:5]:
+            lines.append(f"  - {name}")
+    
+    # Investigation URLs
+    if r.search_urls:
+        lines.append("")
+        lines.append("INVESTIGATION URLS")
+        for name, url in r.search_urls.items():
+            lines.append(f"  {name}: {url}")
+    
+    # Source
+    lines.append("")
+    lines.append(f"Source: {r.source}")
+    
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_gis",
+    description=(
+        "Look up property/parcel data by address, coordinates, or parcel ID. "
+        "Returns owner name, mailing address, assessed value, zoning, acreage, "
+        "and building info. Generates investigation URLs for owner enrichment. "
+        "Supports Regrid API (nationwide, requires GHOST_REGRID_KEY) or state "
+        "GIS endpoints (TX, NY, FL, CO — free, no key)."
+    ),
+    parameters={
+        "address": {
+            "type": "string",
+            "description": "Street address to look up (e.g., '123 Main St, Austin, TX 78701').",
+            "default": "",
+        },
+        "lat": {
+            "type": "number",
+            "description": "Latitude (WGS84). Use with lon for coordinate lookup.",
+            "default": 0,
+        },
+        "lon": {
+            "type": "number",
+            "description": "Longitude (WGS84). Use with lat for coordinate lookup.",
+            "default": 0,
+        },
+        "parcel_id": {
+            "type": "string",
+            "description": "Parcel ID / APN. Requires state (and optionally county).",
+            "default": "",
+        },
+        "county": {
+            "type": "string",
+            "description": "County name (helps disambiguate parcel_id lookups).",
+            "default": "",
+        },
+        "state": {
+            "type": "string",
+            "description": "State abbreviation (e.g., 'TX', 'NY'). Required for state GIS or parcel_id lookup.",
+            "default": "",
+        },
+        "provider": {
+            "type": "string",
+            "description": (
+                "Data provider: 'auto' (try Regrid then state), 'regrid' (nationwide, needs key), "
+                "'state' (use state endpoint), or specific state code ('TX', 'NY', 'FL', 'CO')."
+            ),
+            "default": "auto",
+        },
+    },
+)
+async def ghost_gis(
+    address: str = "",
+    lat: float = 0,
+    lon: float = 0,
+    parcel_id: str = "",
+    county: str = "",
+    state: str = "",
+    provider: str = "auto",
+) -> str:
+    """Look up property/parcel data with owner information."""
+    # Validate input
+    if not address and not (lat and lon) and not parcel_id:
+        return (
+            "Error: Must provide one of:\n"
+            "  - address (e.g., '123 Main St, Austin, TX')\n"
+            "  - lat + lon coordinates\n"
+            "  - parcel_id + state"
+        )
+    
+    if parcel_id and not state:
+        return "Error: parcel_id lookup requires state parameter."
+    
+    try:
+        result = await gis_lookup(
+            address=address,
+            lat=float(lat),
+            lon=float(lon),
+            parcel_id=parcel_id,
+            county=county,
+            state=state,
+            provider=provider,
+        )
+        return _format_gis_result(result)
+    except GISError as e:
+        return f"GIS lookup error: {e}"
+    except Exception as e:
+        return f"Unexpected error: {e}"
 
 
 @mcp.tool(
