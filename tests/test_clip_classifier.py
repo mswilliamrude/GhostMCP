@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.captcha.clip_classifier import (
+from ghostmcp.captcha.clip_classifier import (
     CLIPClassifier,
     _detect_model_name,
     _load_model,
@@ -70,7 +70,7 @@ class TestModelLifecycle:
     @pytest.mark.asyncio
     async def test_maybe_unload_when_idle(self):
         """Model unloads after idle timeout."""
-        import src.captcha.clip_classifier as mod
+        import ghostmcp.captcha.clip_classifier as mod
         # Simulate loaded state
         mod._model = MagicMock()
         mod._preprocess = MagicMock()
@@ -85,7 +85,7 @@ class TestModelLifecycle:
     async def test_maybe_unload_when_recent(self):
         """Model stays loaded if recently used."""
         import time
-        import src.captcha.clip_classifier as mod
+        import ghostmcp.captcha.clip_classifier as mod
         mod._model = MagicMock()
         mod._preprocess = MagicMock()
         mod._tokenizer = MagicMock()
@@ -109,7 +109,7 @@ class TestCLIPClassifier:
 
     def test_classify_sync_with_mocked_model(self):
         """Synchronous classification produces correct output shape."""
-        import src.captcha.clip_classifier as mod
+        import ghostmcp.captcha.clip_classifier as mod
 
         pytest.importorskip("torch")
         import torch
@@ -145,7 +145,7 @@ class TestCLIPClassifier:
     @pytest.mark.asyncio
     async def test_classify_tile_interface(self):
         """CLIPClassifier satisfies TileClassifier protocol."""
-        from src.captcha.grid_solver import TileClassifier
+        from ghostmcp.captcha.grid_solver import TileClassifier
         classifier = CLIPClassifier()
         assert isinstance(classifier, TileClassifier)
 

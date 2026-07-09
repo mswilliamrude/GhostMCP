@@ -252,8 +252,8 @@ Bridge runs independently — not part of the MCP config. It's a sidecar process
 | Component | File | Lines (est.) | Description |
 |-----------|------|-------------|-------------|
 | Bridge client | `ghost_client.py` | ~150 | WebSocket client, port registration, HTTP fetch, response relay |
-| Bridge server endpoint | `src/mcp.py` | ~80 | `/bridge` WebSocket route, client registry, request routing |
-| Tool integration | `src/mcp.py` | ~50 | `_should_use_bridge()` check in `ghost_fetch` and `ghost_render` |
+| Bridge server endpoint | `ghostmcp/mcp.py` | ~80 | `/bridge` WebSocket route, client registry, request routing |
+| Tool integration | `ghostmcp/mcp.py` | ~50 | `_should_use_bridge()` check in `ghost_fetch` and `ghost_render` |
 | **Total** | | **~280 lines** | |
 
 ### Phase 2: Enhanced (Future)

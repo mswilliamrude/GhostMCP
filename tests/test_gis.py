@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.gis import (
+from ghostmcp.recon.gis import (
     GISResult,
     GISError,
     gis_lookup,

@@ -366,7 +366,7 @@ GhostMCP can be registered as an MCP server in Unimind's config:
   "mcpServers": {
     "ghost": {
       "command": "python3",
-      "args": ["/path/to/ghostmcp/src/mcp.py"],
+      "args": ["/path/to/ghostmcp/ghostmcp/mcp.py"],
       "env": {
         "GHOST_PARANOIA": "cautious",
         "GHOST_TOR_ENABLED": "true"

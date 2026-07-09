@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from src.proxy.manager import ProxyManager
-from src.utils.config import ParanoiaLevel
+from ghostmcp.proxy.manager import ProxyManager
+from ghostmcp.utils.config import ParanoiaLevel
 
 
 class TestGetProxy:

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.captcha.api_solver import (
+from ghostmcp.captcha.api_solver import (
     APISolveResult,
     BudgetState,
     CaptchaAPISolver,

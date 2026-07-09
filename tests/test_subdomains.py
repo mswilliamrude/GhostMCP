@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.subdomains import (
+from ghostmcp.recon.subdomains import (
     CertEntry,
     SubdomainReport,
     _clean_subdomain,
@@ -430,7 +430,7 @@ class TestGhostSubdomainsMethodAll:
 
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
             with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
-                from src.mcp import ghost_subdomains
+                from ghostmcp.mcp import ghost_subdomains
                 result = await ghost_subdomains("example.com", method="all")
 
         # All three should appear, www only once

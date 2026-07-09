@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.vulns import (
+from ghostmcp.recon.vulns import (
     CVEResult,
     PackageVulnResult,
     _cvss_to_severity,
@@ -294,7 +294,7 @@ class TestKev:
 
     def setup_method(self):
         """Reset KEV cache between tests."""
-        import src.recon.vulns as vulns_mod
+        import ghostmcp.recon.vulns as vulns_mod
         vulns_mod._kev_cache = None
         vulns_mod._kev_cve_set = None
 
@@ -354,7 +354,7 @@ class TestLookupCve:
     """Tests for lookup_cve()."""
 
     def setup_method(self):
-        import src.recon.vulns as vulns_mod
+        import ghostmcp.recon.vulns as vulns_mod
         vulns_mod._kev_cache = None
         vulns_mod._kev_cve_set = None
 

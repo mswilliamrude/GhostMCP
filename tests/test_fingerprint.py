@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.proxy.fingerprint import get_headers, _ALL_UAS, _ACCEPT_LANGUAGES
-from src.utils.config import ParanoiaLevel
+from ghostmcp.proxy.fingerprint import get_headers, _ALL_UAS, _ACCEPT_LANGUAGES
+from ghostmcp.utils.config import ParanoiaLevel
 
 
 class TestGetHeaders:

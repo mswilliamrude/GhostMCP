@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.engines.base import SearchEngine, SearchResult, SearchEngineError, RateLimitError
-from src.engines.rotator import EngineRotator, EngineState
+from ghostmcp.engines.base import SearchEngine, SearchResult, SearchEngineError, RateLimitError
+from ghostmcp.engines.rotator import EngineRotator, EngineState
 
 
 # ---------------------------------------------------------------------------

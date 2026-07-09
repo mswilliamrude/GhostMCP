@@ -117,7 +117,7 @@ class TestGhostPerplexityBasic:
     @pytest.mark.asyncio
     async def test_missing_query(self):
         """Empty query returns error."""
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="")
         assert "Error" in result
@@ -127,7 +127,7 @@ class TestGhostPerplexityBasic:
     async def test_missing_api_key(self, monkeypatch):
         """Missing API key returns helpful error."""
         monkeypatch.delenv("GHOST_PERPLEXITY_KEY", raising=False)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test query")
         assert "GHOST_PERPLEXITY_KEY" in result
@@ -136,7 +136,7 @@ class TestGhostPerplexityBasic:
     @pytest.mark.asyncio
     async def test_invalid_model(self):
         """Invalid model name returns error."""
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test", model="gpt-4")
         assert "Error" in result
@@ -147,7 +147,7 @@ class TestGhostPerplexityBasic:
     async def test_successful_query(self, mock_post):
         """Successful query returns formatted response with citations."""
         mock_post.return_value = _mock_response(200, SAMPLE_PERPLEXITY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="HTTP/2 Bomb vulnerability")
         assert "[perplexity/sonar-pro]" in result
@@ -162,7 +162,7 @@ class TestGhostPerplexityBasic:
     async def test_deep_research_model(self, mock_post):
         """Deep research model returns results with dict citations."""
         mock_post.return_value = _mock_response(200, SAMPLE_DEEP_RESEARCH_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(
             query="MikroTik custom firmware", model="sonar-deep-research"
@@ -176,7 +176,7 @@ class TestGhostPerplexityBasic:
     async def test_empty_choices(self, mock_post):
         """Empty choices array returns error."""
         mock_post.return_value = _mock_response(200, EMPTY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "Error" in result
@@ -187,7 +187,7 @@ class TestGhostPerplexityBasic:
     async def test_empty_content(self, mock_post):
         """Empty content string returns error."""
         mock_post.return_value = _mock_response(200, NO_CONTENT_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "Error" in result
@@ -202,7 +202,7 @@ class TestGhostPerplexityErrors:
     async def test_401_unauthorized(self, mock_post):
         """401 returns helpful auth error."""
         mock_post.return_value = _mock_response(401, text="Unauthorized")
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "401" in result
@@ -213,7 +213,7 @@ class TestGhostPerplexityErrors:
     async def test_429_rate_limit(self, mock_post):
         """429 returns rate limit message."""
         mock_post.return_value = _mock_response(429, text="Rate limited")
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "rate limit" in result.lower()
@@ -223,7 +223,7 @@ class TestGhostPerplexityErrors:
     async def test_500_server_error(self, mock_post):
         """500 returns server error with status code."""
         mock_post.return_value = _mock_response(500, text="Internal Server Error")
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "500" in result
@@ -235,7 +235,7 @@ class TestGhostPerplexityErrors:
         import httpx
 
         mock_post.side_effect = httpx.TimeoutException("Connection timed out")
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="very complex research question")
         assert "timed out" in result.lower()
@@ -247,7 +247,7 @@ class TestGhostPerplexityErrors:
         import httpx
 
         mock_post.side_effect = httpx.ConnectError("DNS resolution failed")
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="test")
         assert "Cannot connect" in result
@@ -261,7 +261,7 @@ class TestGhostPerplexityParameters:
     async def test_search_recency_week(self, mock_post):
         """Search recency filter is passed to API."""
         mock_post.return_value = _mock_response(200, SAMPLE_PERPLEXITY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         await ghost_perplexity(query="latest news", search_recency="week")
 
@@ -275,7 +275,7 @@ class TestGhostPerplexityParameters:
     async def test_search_recency_invalid_ignored(self, mock_post):
         """Invalid recency filter is silently ignored."""
         mock_post.return_value = _mock_response(200, SAMPLE_PERPLEXITY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         await ghost_perplexity(query="test", search_recency="invalid_value")
 
@@ -288,7 +288,7 @@ class TestGhostPerplexityParameters:
     async def test_sonar_model(self, mock_post):
         """Sonar model is passed correctly."""
         mock_post.return_value = _mock_response(200, SAMPLE_PERPLEXITY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         await ghost_perplexity(query="quick question", model="sonar")
 
@@ -314,7 +314,7 @@ class TestGhostPerplexityParameters:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
         }
         mock_post.return_value = _mock_response(200, response)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         result = await ghost_perplexity(query="simple question")
         assert "Answer without citations" in result
@@ -325,7 +325,7 @@ class TestGhostPerplexityParameters:
     async def test_api_key_in_header(self, mock_post):
         """API key is sent in Authorization header."""
         mock_post.return_value = _mock_response(200, SAMPLE_PERPLEXITY_RESPONSE)
-        from src.mcp import ghost_perplexity
+        from ghostmcp.mcp import ghost_perplexity
 
         await ghost_perplexity(query="test")
 

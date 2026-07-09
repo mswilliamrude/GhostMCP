@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from src.engines.base import SearchResult, SearchEngineError
-from src.engines.duckduckgo import DuckDuckGoEngine
+from ghostmcp.engines.base import SearchResult, SearchEngineError
+from ghostmcp.engines.duckduckgo import DuckDuckGoEngine
 
 
 # Sample DDG Lite HTML response for testing parsing logic

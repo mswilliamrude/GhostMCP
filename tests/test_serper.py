@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from src.engines.serper import SerperEngine
-from src.engines.base import SearchEngineError
+from ghostmcp.engines.serper import SerperEngine
+from ghostmcp.engines.base import SearchEngineError
 
 from tests.conftest import (
     SAMPLE_SERPER_RESPONSE,

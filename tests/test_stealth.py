@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.stealth.browser_stealth import (
+from ghostmcp.stealth.browser_stealth import (
     STEALTH_SCRIPTS,
     apply_stealth,
     get_stealth_context_options,
 )
-from src.stealth.behavioral import (
+from ghostmcp.stealth.behavioral import (
     human_click,
     human_move_to,
     human_scroll,
@@ -510,8 +510,8 @@ class TestModuleImports:
     """Verify that the stealth package exports work."""
 
     def test_import_from_package(self):
-        """Should be able to import all public names from src.stealth."""
-        from src.stealth import (
+        """Should be able to import all public names from ghostmcp.stealth."""
+        from ghostmcp.stealth import (
             STEALTH_SCRIPTS,
             apply_stealth,
             get_stealth_context_options,

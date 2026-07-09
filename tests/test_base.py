@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.engines.base import SearchResult, SearchEngineError, RateLimitError, SearchEngine
+from ghostmcp.engines.base import SearchResult, SearchEngineError, RateLimitError, SearchEngine
 
 
 class TestSearchResult:

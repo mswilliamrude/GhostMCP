@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from src.recon.render import RenderReport, render_page
+from ghostmcp.recon.render import RenderReport, render_page
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +414,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="all")
 
         assert "=== Rendered Page: My Page ===" in result
@@ -441,7 +441,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="dom")
 
         assert "=== Rendered Page: DOM Only ===" in result
@@ -465,7 +465,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="console")
 
         assert "=== Console Output ===" in result
@@ -490,7 +490,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="errors")
 
         assert "=== JavaScript Errors ===" in result
@@ -514,7 +514,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="errors")
 
         assert "No JavaScript errors detected." in result
@@ -528,7 +528,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com")
 
         assert "Render error: TimeoutError: page did not load" in result
@@ -547,7 +547,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="dom")
 
         assert "[... truncated at 30KB ...]" in result
@@ -568,7 +568,7 @@ class TestGhostRenderTool:
         )
 
         with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
-            from src.mcp import ghost_render
+            from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", screenshot=True)
 
         assert "Screenshot saved: /tmp/ghostmcp_screenshot.png" in result

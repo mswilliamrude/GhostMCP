@@ -7,7 +7,7 @@ from urllib.parse import quote_plus
 
 import pytest
 
-from src.recon.court import (
+from ghostmcp.recon.court import (
     CourtCase,
     CourtSearchResult,
     _build_search_urls,

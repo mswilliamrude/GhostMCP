@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.certs import (
+from ghostmcp.recon.certs import (
     CertReport,
     grade_cert,
     jarm_fingerprint,
@@ -877,7 +877,7 @@ class TestIntegrationGrading:
                 mock_ctx.wrap_socket.return_value = ssock
                 mock_ctx_cls.return_value = mock_ctx
 
-                from src.recon.certs import inspect_cert
+                from ghostmcp.recon.certs import inspect_cert
                 report = await inspect_cert("example.com")
 
         # Should have grade populated
@@ -889,7 +889,7 @@ class TestIntegrationGrading:
     @pytest.mark.asyncio
     async def test_inspect_cert_error_skips_grading(self):
         """inspect_cert with connection error should skip grading."""
-        from src.recon.certs import inspect_cert
+        from ghostmcp.recon.certs import inspect_cert
 
         with patch("src.recon.certs.socket.create_connection",
                    side_effect=ConnectionRefusedError("refused")):

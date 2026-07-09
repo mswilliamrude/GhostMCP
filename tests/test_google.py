@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from src.engines.google import GoogleEngine
-from src.engines.base import SearchEngineError, RateLimitError
+from ghostmcp.engines.google import GoogleEngine
+from ghostmcp.engines.base import SearchEngineError, RateLimitError
 
 from tests.conftest import (
     SAMPLE_GOOGLE_HTML,

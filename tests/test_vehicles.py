@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.recon.vehicles import (
+from ghostmcp.recon.vehicles import (
     VehicleReport,
     _validate_vin,
     _parse_vin_decode,

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.engines.bing import BingEngine
-from src.engines.base import SearchResult, SearchEngineError
+from ghostmcp.engines.bing import BingEngine
+from ghostmcp.engines.base import SearchResult, SearchEngineError
 
 
 # ---------------------------------------------------------------------------

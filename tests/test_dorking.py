@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.dorking.builder import build_dork, from_template
-from src.dorking.templates import TEMPLATES, get_template_names, get_template_info
+from ghostmcp.dorking.builder import build_dork, from_template
+from ghostmcp.dorking.templates import TEMPLATES, get_template_names, get_template_info
 
 
 class TestBuildDork:

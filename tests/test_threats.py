@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.threats import (
+from ghostmcp.recon.threats import (
     ThreatEntry,
     ThreatReport,
     _detect_indicator_type,

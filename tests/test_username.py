@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.username import (
+from ghostmcp.recon.username import (
     UsernameReport,
     _BUILTIN_SITES,
     _URL_ONLY_SITES,

@@ -28,9 +28,9 @@ import os
 
 import pytest
 
-from src.recon.phone import phone_lookup, PhoneReport
-from src.recon.vehicles import vehicle_lookup, VehicleReport
-from src.recon.people import (
+from ghostmcp.recon.phone import phone_lookup, PhoneReport
+from ghostmcp.recon.vehicles import vehicle_lookup, VehicleReport
+from ghostmcp.recon.people import (
     people_search,
     people_search_by_name,
     people_search_by_phone,
@@ -39,11 +39,11 @@ from src.recon.people import (
     people_search_by_username,
     PeopleSearchResult,
 )
-from src.recon.email_intel import email_lookup, EmailReport
-from src.recon.username import username_lookup, UsernameReport
-from src.recon.court import court_search, CourtSearchResult
-from src.recon.breach import breach_search, BreachSearchResult
-from src.recon.report import generate_report, BackgroundReport
+from ghostmcp.recon.email_intel import email_lookup, EmailReport
+from ghostmcp.recon.username import username_lookup, UsernameReport
+from ghostmcp.recon.court import court_search, CourtSearchResult
+from ghostmcp.recon.breach import breach_search, BreachSearchResult
+from ghostmcp.recon.report import generate_report, BackgroundReport
 
 # ---------------------------------------------------------------------------
 # Known-safe test data
@@ -69,7 +69,7 @@ class TestPhoneIntegration:
     @pytest.mark.asyncio
     async def test_offline_validation(self):
         """Validate +12025551234 (known DC area code), check formatted output."""
-        from src.recon.phone import _HAS_PHONENUMBERS
+        from ghostmcp.recon.phone import _HAS_PHONENUMBERS
 
         # Clear paid-API keys so only offline analysis runs
         env_overrides = {
@@ -802,7 +802,7 @@ class TestIPIntegration:
     @pytest.mark.asyncio
     async def test_lookup_google_dns(self):
         """Look up 8.8.8.8 (Google Public DNS) — well-known, stable."""
-        from src.recon.ip_intel import ip_lookup
+        from ghostmcp.recon.ip_intel import ip_lookup
 
         report = await ip_lookup("8.8.8.8")
 
@@ -820,7 +820,7 @@ class TestIPIntegration:
     @pytest.mark.asyncio
     async def test_lookup_cloudflare_dns(self):
         """Look up 1.1.1.1 (Cloudflare DNS) — another well-known IP."""
-        from src.recon.ip_intel import ip_lookup
+        from ghostmcp.recon.ip_intel import ip_lookup
         import asyncio
 
         await asyncio.sleep(1.5)  # Rate limit courtesy
@@ -835,7 +835,7 @@ class TestIPIntegration:
     @pytest.mark.asyncio
     async def test_invalid_ip(self):
         """Verify error handling for invalid IP."""
-        from src.recon.ip_intel import ip_lookup
+        from ghostmcp.recon.ip_intel import ip_lookup
 
         report = await ip_lookup("999.999.999.999")
         assert report.error is not None
@@ -845,7 +845,7 @@ class TestIPIntegration:
     @pytest.mark.asyncio
     async def test_private_range(self):
         """Private IPs should fail gracefully (ip-api returns fail status)."""
-        from src.recon.ip_intel import ip_lookup
+        from ghostmcp.recon.ip_intel import ip_lookup
         import asyncio
 
         await asyncio.sleep(1.5)  # Rate limit courtesy

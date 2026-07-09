@@ -42,7 +42,7 @@ pip install playwright && playwright install chromium
 
 # Verify it works
 python3 -m pytest tests/ -v    # 1,453 unit tests, all passing
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m src
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m ghostmcp
 ```
 
 ### Windows (MSYS2 UCRT64)
@@ -441,9 +441,9 @@ GhostMCP has 4 operational security levels that control how requests are made:
 ```
 GhostMCP/
 ├── README.md                    # This file
-├── src/
+├── ghostmcp/
 │   ├── __init__.py
-│   ├── __main__.py              # Entry point: python3 -m src
+│   ├── __main__.py              # Entry point: python3 -m ghostmcp
 │   ├── mcp.py                   # MCP server (27 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations

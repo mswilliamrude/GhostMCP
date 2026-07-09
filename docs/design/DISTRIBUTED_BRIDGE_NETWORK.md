@@ -187,7 +187,7 @@ Search results tagged:
 └──────────────────────────────────────────────┘
 ```
 
-### GhostMCP Server (src/mcp.py)
+### GhostMCP Server (ghostmcp/mcp.py)
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -241,26 +241,26 @@ Search results tagged:
 |-----------|--------|
 | `ghost_client.py` | Handle web requests (non-localhost) when `allow_web_access: true` |
 | `ghost_client.py` | Send `allow_web_access` and `web_access_mode` in registration |
-| `src/mcp.py` | Store web access capability in bridge registry |
-| `src/mcp.py` | Route search engine HTTP calls through bridge when no egress |
+| `ghostmcp/mcp.py` | Store web access capability in bridge registry |
+| `ghostmcp/mcp.py` | Route search engine HTTP calls through bridge when no egress |
 
 ### Phase 3: Distributed Pool + Round-Robin (~50 lines)
 
 | Component | Change |
 |-----------|--------|
-| `src/mcp.py` | Maintain `_shared_pool` list of bridges with `mode: shared` |
-| `src/mcp.py` | Round-robin selection for search requests |
-| `src/mcp.py` | `self_only` routing for per-client requests |
-| `src/mcp.py` | Fallback chain: self_only → shared pool → direct → error |
+| `ghostmcp/mcp.py` | Maintain `_shared_pool` list of bridges with `mode: shared` |
+| `ghostmcp/mcp.py` | Round-robin selection for search requests |
+| `ghostmcp/mcp.py` | `self_only` routing for per-client requests |
+| `ghostmcp/mcp.py` | Fallback chain: self_only → shared pool → direct → error |
 
 ### Phase 4: Locality Tracking + Result Tagging (~40 lines)
 
 | Component | Change |
 |-----------|--------|
 | `ghost_client.py` | Send `locality` block in registration |
-| `src/mcp.py` | Store locality in bridge registry |
-| `src/mcp.py` | Tag `SearchResult` with `bridge_client` and `bridge_locality` |
-| `src/mcp.py` | Prefer same-bridge for multi-step research (session affinity) |
+| `ghostmcp/mcp.py` | Store locality in bridge registry |
+| `ghostmcp/mcp.py` | Tag `SearchResult` with `bridge_client` and `bridge_locality` |
+| `ghostmcp/mcp.py` | Prefer same-bridge for multi-step research (session affinity) |
 
 ### Total Estimate: ~230 lines across 2 files
 

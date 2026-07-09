@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.recon.certs import (
+from ghostmcp.recon.certs import (
     CertReport,
     inspect_cert,
     _extract_cn,

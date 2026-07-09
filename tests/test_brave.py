@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.engines.brave import BraveEngine
-from src.engines.base import SearchResult, SearchEngineError
+from ghostmcp.engines.brave import BraveEngine
+from ghostmcp.engines.base import SearchResult, SearchEngineError
 
 
 # ---------------------------------------------------------------------------

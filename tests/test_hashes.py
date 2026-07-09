@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.hashes import (
+from ghostmcp.recon.hashes import (
     HashReport,
     detect_hash_type,
     compute_file_hashes,

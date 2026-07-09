@@ -2,3 +2,29 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
+*.egg-info/
+
+# Session files (may contain API keys)
+session-*.md
+
+# Token/credential caches
+token_cache.bin
+*.token
+auth.json
+
+# Environment files with secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rate limit state
+/tmp/ghostmcp_ratelimit/

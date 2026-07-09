@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.ip_intel import (
+from ghostmcp.recon.ip_intel import (
     IPReport,
     ip_lookup,
     _is_valid_ipv4,

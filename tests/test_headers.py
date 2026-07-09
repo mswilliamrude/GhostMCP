@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.headers import (
+from ghostmcp.recon.headers import (
     HeadersReport,
     analyze_headers,
     grade_headers,

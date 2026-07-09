@@ -6,7 +6,7 @@ from urllib.parse import quote, quote_plus
 
 import pytest
 
-from src.recon.people import (
+from ghostmcp.recon.people import (
     PeopleSearchResult,
     people_search_by_name,
     people_search_by_phone,

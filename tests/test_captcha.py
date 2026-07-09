@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.captcha.detector import detect_captcha, CaptchaDetection, CAPTCHA_INDICATORS
-from src.captcha.grid_solver import (
+from ghostmcp.captcha.detector import detect_captcha, CaptchaDetection, CAPTCHA_INDICATORS
+from ghostmcp.captcha.grid_solver import (
     solve_grid_captcha,
     extract_grid_tiles,
     GridSolveResult,
@@ -22,13 +22,13 @@ from src.captcha.grid_solver import (
     TileClassifier,
     DummyClassifier,
 )
-from src.captcha.slider_solver import (
+from ghostmcp.captcha.slider_solver import (
     solve_slider_captcha,
     find_gap_position,
     simulate_slider_drag,
     SliderSolveResult,
 )
-from src.captcha.learning import (
+from ghostmcp.captcha.learning import (
     log_captcha_event,
     get_event_log,
     get_stats,
@@ -36,7 +36,7 @@ from src.captcha.learning import (
     CaptchaEvent,
     _event_log,
 )
-from src.captcha.solver_chain import solve_captcha, SolveAttempt
+from ghostmcp.captcha.solver_chain import solve_captcha, SolveAttempt
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.mcp import MCPServer
+from ghostmcp.mcp import MCPServer
 
 
 class TestMCPServerRegistration:

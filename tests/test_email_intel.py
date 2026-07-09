@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.email_intel import (
+from ghostmcp.recon.email_intel import (
     EmailReport,
     FREE_PROVIDERS,
     _basic_validate,

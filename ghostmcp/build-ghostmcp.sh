@@ -12,8 +12,8 @@
 #   build-ghostmcp test               Run test suite inside container
 #   build-ghostmcp mcp                Test MCP tools/list response
 #   build-ghostmcp shell              Interactive bash inside container
-#   build-ghostmcp sync               Copy local src/ into running container
-#   build-ghostmcp pull               Copy container /app/src/ to local src/
+#   build-ghostmcp sync               Copy local ghostmcp/ into running container
+#   build-ghostmcp pull               Copy container /app/ghostmcp/ to local ghostmcp/
 #   build-ghostmcp deploy             Build + deploy to Azure Container Instances
 #   build-ghostmcp teardown           Delete ACI container group
 #
@@ -21,7 +21,7 @@
 #   GHOST_IMAGE         Docker image name (default: ghostmcp:latest)
 #   GHOST_CONTAINER     Container name (default: ghostmcp-dev)
 #   GHOST_SSH_PORT      Local SSH port mapping (default: 2222)
-#   GHOST_ACR           ACR server (default: wdrcentralus.azurecr.io)
+#   GHOST_ACR           ACR server (set via GHOST_ACR_NAME env var)
 
 set -euo pipefail
 
@@ -112,15 +112,18 @@ GHOST_CONTAINER="${GHOST_CONTAINER:-ghostmcp-dev}"
 GHOST_SSH_PORT="${GHOST_SSH_PORT:-2222}"
 
 # --- ACR / ACI configuration ---
-GHOST_ACR_NAME="${GHOST_ACR_NAME:-wdrcentralus}"
-GHOST_ACR_SERVER="${GHOST_ACR_NAME}.azurecr.io"
+# All values configurable via environment variables. No defaults for
+# subscription, resource group, or network — must be set explicitly
+# for Azure deployments. Podman builds don't need these.
+GHOST_ACR_NAME="${GHOST_ACR_NAME:-}"
+GHOST_ACR_SERVER="${GHOST_ACR_NAME:+${GHOST_ACR_NAME}.azurecr.io}"
 GHOST_ACR_IMAGE="${GHOST_ACR_IMAGE:-ghostmcp}"
 GHOST_ACR_IMAGE_BASE="${GHOST_ACR_IMAGE_BASE:-ghostmcp-base}"
-GHOST_SUBSCRIPTION="${GHOST_SUBSCRIPTION:-AEPSovereign_EncryptedTransport_Sandbox}"
-GHOST_RESOURCE_GROUP="${GHOST_RESOURCE_GROUP:-aet-apt-localdev-es2}"
+GHOST_SUBSCRIPTION="${GHOST_SUBSCRIPTION:-}"
+GHOST_RESOURCE_GROUP="${GHOST_RESOURCE_GROUP:-}"
 GHOST_LOCATION="${GHOST_LOCATION:-centralus}"
-GHOST_VNET="${GHOST_VNET:-aet-psrdev-centralus-vnet}"
-GHOST_SUBNET="${GHOST_SUBNET:-aet-psrdev-centralus-docker0}"
+GHOST_VNET="${GHOST_VNET:-}"
+GHOST_SUBNET="${GHOST_SUBNET:-}"
 GHOST_CONTAINER_GROUP="${GHOST_CONTAINER_GROUP:-ghostmcp-app}"
 
 # --- Resolve source directory ---
@@ -356,7 +359,7 @@ cmd_mcp() {
     fi
     echo "[INFO] Testing MCP tools/list..."
     echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | \
-        $CTR exec -i "$GHOST_CONTAINER" python3 -m src 2>/dev/null | \
+        $CTR exec -i "$GHOST_CONTAINER" python3 -m ghostmcp 2>/dev/null | \
         python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -380,9 +383,9 @@ cmd_sync() {
         echo "[ERROR] Container $GHOST_CONTAINER is not running"
         exit 1
     fi
-    echo "[INFO] Syncing local src/ → container /app/src/"
+    echo "[INFO] Syncing local ghostmcp/ → container /app/ghostmcp/"
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -P "$GHOST_SSH_PORT" -r "$SRC_DIR/src/" root@localhost:/app/src/
+        -P "$GHOST_SSH_PORT" -r "$SRC_DIR/ghostmcp/" root@localhost:/app/ghostmcp/
     echo "[INFO] Syncing local tests/ → container /app/tests/"
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -P "$GHOST_SSH_PORT" -r "$SRC_DIR/tests/" root@localhost:/app/tests/
@@ -394,9 +397,9 @@ cmd_pull() {
         echo "[ERROR] Container $GHOST_CONTAINER is not running"
         exit 1
     fi
-    echo "[INFO] Pulling container /app/src/ → local src/"
+    echo "[INFO] Pulling container /app/ghostmcp/ → local ghostmcp/"
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -P "$GHOST_SSH_PORT" -r root@localhost:/app/src/ "$SRC_DIR/src/"
+        -P "$GHOST_SSH_PORT" -r root@localhost:/app/ghostmcp/ "$SRC_DIR/ghostmcp/"
     echo "[INFO] Pulling container /app/tests/ → local tests/"
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -P "$GHOST_SSH_PORT" -r root@localhost:/app/tests/ "$SRC_DIR/tests/"
@@ -558,8 +561,8 @@ case "${1:-help}" in
         echo "  test            Run test suite inside container"
         echo "  mcp             Test MCP tool listing"
         echo "  shell           Interactive bash inside container"
-        echo "  sync            Push local src/ + tests/ into container"
-        echo "  pull            Pull container src/ + tests/ to local"
+        echo "  sync            Push local ghostmcp/ + tests/ into container"
+        echo "  pull            Pull container ghostmcp/ + tests/ to local"
         echo "  deploy          Deploy to Azure Container Instances"
         echo "  teardown        Delete ACI container group"
         echo ""

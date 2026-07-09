@@ -106,7 +106,7 @@ ghost_cert(host)   ──────────►  [1] Existing TLS connectio
 ### Module Layout
 
 ```
-src/recon/
+ghostmcp/recon/
 ├── certs.py          ← MODIFY: add grading logic (~100 lines)
 ├── headers.py        ← NEW: security header analysis (~200 lines)
 ├── dns_intel.py      ← NEW: DNS security checks (~300 lines)

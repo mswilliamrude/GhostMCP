@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.dns_intel import (
+from ghostmcp.recon.dns_intel import (
     DNSReport,
     dns_lookup,
     _validate_domain,

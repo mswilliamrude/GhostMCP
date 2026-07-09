@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.breach import (
+from ghostmcp.recon.breach import (
     BreachRecord,
     BreachSearchResult,
     _build_search_urls,

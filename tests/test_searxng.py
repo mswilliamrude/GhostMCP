@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.engines.searxng import SearXNGEngine
-from src.engines.base import SearchResult, SearchEngineError
+from ghostmcp.engines.searxng import SearXNGEngine
+from ghostmcp.engines.base import SearchResult, SearchEngineError
 
 
 # ---------------------------------------------------------------------------

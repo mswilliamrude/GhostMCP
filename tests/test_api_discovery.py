@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.recon.api_discovery import (
+from ghostmcp.recon.api_discovery import (
     APIDiscoveryReport,
     GRAPHQL_INTROSPECTION_QUERY,
     OPENAPI_PATHS,

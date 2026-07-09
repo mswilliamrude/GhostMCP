@@ -291,10 +291,10 @@ pytest-asyncio>=0.23
 
 | Engine | Status | Module |
 |---|---|---|
-| Brave | **Implemented** | src/engines/brave.py |
-| Serper | **Implemented** | src/engines/serper.py |
-| Google (scraper) | **Implemented** | src/engines/google.py |
-| DuckDuckGo (scraper) | **Implemented** | src/engines/duckduckgo.py |
+| Brave | **Implemented** | ghostmcp/engines/brave.py |
+| Serper | **Implemented** | ghostmcp/engines/serper.py |
+| Google (scraper) | **Implemented** | ghostmcp/engines/google.py |
+| DuckDuckGo (scraper) | **Implemented** | ghostmcp/engines/duckduckgo.py |
 | Bing API | **Planned** | — |
 | Bing scraper | **Planned** | — |
 | Google Custom Search | **Planned** | — |

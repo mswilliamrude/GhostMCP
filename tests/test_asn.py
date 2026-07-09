@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.recon.asn import (
+from ghostmcp.recon.asn import (
     ASNReport,
     asn_lookup,
     detect_query_type,

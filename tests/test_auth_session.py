@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.auth.session_manager import AuthSession, SessionManager, get_session_manager
-from src.auth.form_login import FormLoginResult, form_login
+from ghostmcp.auth.session_manager import AuthSession, SessionManager, get_session_manager
+from ghostmcp.auth.form_login import FormLoginResult, form_login
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ class TestSessionManager:
     def test_singleton_get_session_manager(self):
         """get_session_manager should return the same instance."""
         # Reset the singleton for testing
-        import src.auth.session_manager as sm
+        import ghostmcp.auth.session_manager as sm
         sm._session_manager = None
 
         mgr1 = get_session_manager()
@@ -379,7 +379,7 @@ class TestFormLogin:
         import sys
         with patch.dict(sys.modules, {"playwright": None, "playwright.async_api": None}):
             # Re-import triggers ImportError inside form_login
-            from src.auth.form_login import form_login as fl
+            from ghostmcp.auth.form_login import form_login as fl
             result = await fl(
                 url="https://app.com/login",
                 username="user",
@@ -600,7 +600,7 @@ class TestGhostAuthSessionTool:
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
         """Reset the session manager singleton before each test."""
-        import src.auth.session_manager as sm
+        import ghostmcp.auth.session_manager as sm
         sm._session_manager = None
         yield
         sm._session_manager = None
@@ -608,14 +608,14 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_list_empty(self):
         """list action with no sessions should return informative message."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(action="list")
         assert "No active auth sessions" in result
 
     @pytest.mark.asyncio
     async def test_create_bearer(self):
         """create bearer session should succeed."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="bearer",
@@ -630,7 +630,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_bearer_missing_token(self):
         """create bearer without token should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="bearer",
@@ -643,7 +643,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_cookie(self):
         """create cookie session should succeed."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="cookie",
@@ -656,7 +656,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_cookie_invalid_json(self):
         """create cookie with invalid JSON should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="cookie",
@@ -669,7 +669,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_basic(self):
         """create basic auth session should succeed."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="basic",
@@ -682,7 +682,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_missing_origin(self):
         """create without origin should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="bearer",
@@ -695,7 +695,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_create_form_missing_credentials(self):
         """create form without credentials should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="form",
@@ -710,7 +710,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_destroy(self):
         """destroy should remove session."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
 
         # Create first
         create_result = await ghost_auth_session(
@@ -733,14 +733,14 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_destroy_not_found(self):
         """destroy non-existent session should report not found."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(action="destroy", session_id="fake-id")
         assert "not found" in result.lower()
 
     @pytest.mark.asyncio
     async def test_destroy_all(self):
         """destroy_all should wipe all sessions."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
 
         # Create a few sessions
         await ghost_auth_session(action="create", auth_type="bearer", origin="https://a.com", token="t1")
@@ -752,7 +752,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_list_after_create(self):
         """list should show created sessions."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
 
         await ghost_auth_session(
             action="create",
@@ -773,7 +773,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_unknown_action(self):
         """Unknown action should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(action="invalid")
         assert "Error" in result
         assert "unknown action" in result.lower()
@@ -781,7 +781,7 @@ class TestGhostAuthSessionTool:
     @pytest.mark.asyncio
     async def test_unknown_auth_type(self):
         """Unknown auth_type should return error."""
-        from src.mcp import ghost_auth_session
+        from ghostmcp.mcp import ghost_auth_session
         result = await ghost_auth_session(
             action="create",
             auth_type="oauth2",

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.recon.report import (
+from ghostmcp.recon.report import (
     BackgroundReport,
     LEGAL_DISCLAIMER,
     CONFIDENCE_GOVERNMENT,
@@ -29,8 +29,8 @@ from src.recon.report import (
     _collect_data_sources,
     _generate_warnings,
 )
-from src.recon.phone import PhoneReport
-from src.recon.breach import BreachRecord, BreachSearchResult
+from ghostmcp.recon.phone import PhoneReport
+from ghostmcp.recon.breach import BreachRecord, BreachSearchResult
 
 
 # ---------------------------------------------------------------------------
