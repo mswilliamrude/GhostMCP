@@ -3,5 +3,5 @@
     "build": {
         "dockerfile": "Dockerfile"
     },
-    "postCreateCommand": "pip install -r requirements.txt"
+    "postCreateCommand": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
 }
