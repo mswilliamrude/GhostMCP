@@ -1,16 +1,51 @@
 {
     "name": "GhostMCP",
-    "build": { "dockerfile": "Dockerfile" },
-    "postCreateCommand": "bash .devcontainer/setup.sh",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "remoteUser": "root",
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+        "ghcr.io/devcontainers/features/git:1": {
+            "version": "system"
+        },
+        "ghcr.io/devcontainers/features/git-lfs:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+            "enableNonRootDocker": true,
+            "moby": false
+        },
+        "ghcr.io/jsburckhardt/devcontainer-features/just:1": {},
+        "ghcr.io/iyaki/devcontainer-features/oh-my-pi:1": {},
+        "ghcr.io/stu-bell/devcontainer-features/open-code:0": {}
+    },
+    "postCreateCommand": "uv sync",
+    "remoteEnv": {
+        "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+    },
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-python.python",
-                "charliermarsh.ruff"
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "docker.docker",
+                "ms-azuretools.vscode-docker",
+                "the0807.uv-toolkit",
+                "skellock.just",
+                "github.vscode-github-actions"
             ],
             "settings": {
-                "python.defaultInterpreterPath": "/workspaces/.venv/bin/python",
-                "python.terminal.activateEnvironment": true
+                "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+                "python.terminal.activateEnvironment": true,
+                "python.testing.pytestEnabled": true,
+                "python.analysis.typeCheckingMode": "basic",
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.fixAll.ruff": "explicit",
+                    "source.organizeImports.ruff": "explicit"
+                }
             }
         }
     }
