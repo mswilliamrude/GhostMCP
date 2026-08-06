@@ -12,7 +12,9 @@ Designed as both a **development workflow accelerator** (find answers faster) an
 
 Can be called by any MCP client (opencode, Claude Desktop, VS Code Copilot, Cursor) or used standalone via CLI.
 
-**v0.5.2** — 29 tools, 1,453 unit tests + 35 integration tests, all passing.
+**v0.5.3** — 29 tools, 1,490+ unit tests (run `python3 -m pytest tests/`).
+
+See **[INSTALL.md](INSTALL.md)** for full installation and container build/deploy instructions.
 
 ---
 
@@ -41,7 +43,7 @@ pip install curl_cffi
 pip install playwright && playwright install chromium
 
 # Verify it works
-python3 -m pytest tests/ -v    # 1,453 unit tests, all passing
+python3 -m pytest tests/ -v    # 1,490+ unit tests
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m ghostmcp
 ```
 
@@ -81,6 +83,10 @@ docker compose down
 This starts:
 - **ghostmcp** — Main MCP server on port 8080
 - **searxng** — Internal metasearch engine (not exposed externally)
+
+For building container images, running a persistent dev container over SSH, or
+deploying to Azure Container Instances, use `scripts/build-ghostmcp.sh` — see
+**[INSTALL.md](INSTALL.md)** for the full workflow.
 
 The internal SearXNG instance is pre-configured for API access and OSINT-optimized engine selection. No additional setup required — `ghost_searxng` works out of the box.
 
@@ -124,7 +130,7 @@ Add to your MCP configuration (`opencode.json`, `claude_desktop_config.json`, et
       "type": "local",
       "command": [
         "python3",
-        "-m", "src"
+        "-m", "ghostmcp"
       ],
       "enabled": true,
       "environment": {
@@ -141,6 +147,9 @@ Add to your MCP configuration (`opencode.json`, `claude_desktop_config.json`, et
 ```
 
 Restart your MCP client after adding the configuration.
+
+For **VS Code (Copilot Agent mode)** and **PyCharm / JetBrains** setup, see the
+IDE integration section in **[INSTALL.md](INSTALL.md#ide-integration)**.
 
 ---
 
@@ -444,7 +453,7 @@ GhostMCP/
 ├── ghostmcp/
 │   ├── __init__.py
 │   ├── __main__.py              # Entry point: python3 -m ghostmcp
-│   ├── mcp.py                   # MCP server (27 tools, JSON-RPC stdio)
+│   ├── mcp.py                   # MCP server (29 tools, JSON-RPC stdio)
 │   ├── cli.py                   # CLI interface
 │   ├── engines/                 # Search engine implementations
 │   │   ├── base.py              # SearchResult dataclass, SearchEngine ABC, rate limiter
@@ -483,7 +492,7 @@ GhostMCP/
 │   │   └── asn.py               # BGP/ASN network reconnaissance
 │   └── utils/
 │       └── config.py            # ParanoiaLevel enum, Config dataclass
-├── tests/                       # 1,453 unit tests + 35 integration tests
+├── tests/                       # 1,490+ unit tests
 │   ├── conftest.py              # Shared fixtures, markers
 │   ├── test_base.py             # SearchResult, exceptions, rate limiter
 │   ├── test_dorking.py          # Dork builder + templates
@@ -519,8 +528,19 @@ GhostMCP/
 │   ├── research/                # OSINT API research
 │   └── status/                  # Project status tracking
 ├── config/                      # Configuration templates
-├── scripts/                     # Utility scripts
-└── docker/                      # Container build files (future)
+├── scripts/
+│   └── build-ghostmcp.sh        # Build / run / test / deploy (podman, docker, Azure)
+├── client/                      # Client bridge (ghost_client.py + example config)
+├── install.sh                   # Client installer (~/.ghostmcp/client venv + config)
+├── INSTALL.md                   # Full installation & container build/deploy guide
+├── docker-compose.yml           # Local server stack (ghostmcp + internal SearXNG)
+├── Dockerfile                   # App image (COPY ghostmcp/ tests/)
+├── Dockerfile.base              # Base image: OS + Python deps + Playwright/Chromium
+├── Dockerfile.layer1-os         # Granular cache layers (os / model / pip / app)
+├── Dockerfile.layer2-model
+├── Dockerfile.layer3-pip
+├── Dockerfile.layer4-app
+└── Dockerfile.render            # Render sidecar image
 ```
 
 ---
@@ -630,7 +650,7 @@ Tests are configured in `conftest.py` to skip `integration` and `paid` markers b
 
 ## Design Principles
 
-- **Free by default** — All core functionality works without API keys (19 of 27 tools need no keys)
+- **Free by default** — All core functionality works without API keys (most of the 29 tools need no keys)
 - **No footprint** — Stealth headers, proxy support, Tor integration
 - **Standalone** — Runs independently, but callable from any MCP client
 - **Modular engines** — Add new search engines without touching core
