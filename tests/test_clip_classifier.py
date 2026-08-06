@@ -52,11 +52,17 @@ class TestModelLifecycle:
         """Reset the module-level model globals before AND after each test.
 
         clip_classifier keeps _model / _last_used / _model_name as module
-        globals. Other test files (and earlier tests here) can leave that state
-        dirty, which made test_maybe_unload_when_idle fail only in the full
-        suite (pollution) while passing in isolation. Reset guarantees a clean
-        slate regardless of test order.
+        globals, and a module-level asyncio.Lock() created at import time.
+        Under pytest-asyncio each test runs in a fresh event loop, so the
+        import-time lock can be bound to a stale/closed loop — making
+        `async with _lock` inside maybe_unload() misbehave and skip the unload
+        (test_maybe_unload_when_idle then fails only in the full suite while
+        passing in isolation). Rebind the lock to the current loop and clear
+        model state for a clean, order-independent slate.
         """
+        import asyncio
+        import ghostmcp.captcha.clip_classifier as mod
+        mod._lock = asyncio.Lock()
         _unload_model()
         yield
         _unload_model()
