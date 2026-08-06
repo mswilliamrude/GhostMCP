@@ -70,13 +70,18 @@ class TestModelLifecycle:
     @pytest.mark.asyncio
     async def test_maybe_unload_when_idle(self):
         """Model unloads after idle timeout."""
+        import time
         import ghostmcp.captcha.clip_classifier as mod
         # Simulate loaded state
         mod._model = MagicMock()
         mod._preprocess = MagicMock()
         mod._tokenizer = MagicMock()
         mod._model_name = "test"
-        mod._last_used = 1.0  # Very old monotonic timestamp (guaranteed past TTL)
+        # Set last-used far enough in the past to be guaranteed past IDLE_TTL,
+        # relative to the current monotonic clock. A hardcoded small value (e.g.
+        # 1.0) is NOT reliably past-TTL on freshly-booted CI runners where
+        # time.monotonic() itself is small (uptime < IDLE_TTL).
+        mod._last_used = time.monotonic() - mod.IDLE_TTL - 1
 
         await maybe_unload()
         assert not is_loaded()
