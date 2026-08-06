@@ -2,6 +2,12 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+
+# Secrets — never commit
+.env
+*.env
+*.swp
+*.swo
 .venv/
 *.egg-info/
 

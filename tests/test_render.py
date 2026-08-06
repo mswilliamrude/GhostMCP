@@ -556,7 +556,7 @@ class TestGhostRenderTool:
 
     @pytest.mark.asyncio
     async def test_screenshot_message(self):
-        """Should include screenshot path when screenshot is taken."""
+        """With screenshot_inline=False, result is a string noting the saved path."""
         mock_report = RenderReport(
             url="https://test.com",
             title="Screenshot Test",
@@ -569,6 +569,52 @@ class TestGhostRenderTool:
 
         with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
-            result = await ghost_render(url="https://test.com", screenshot=True)
+            result = await ghost_render(
+                url="https://test.com", screenshot=True, screenshot_inline=False
+            )
 
+        assert isinstance(result, str)
         assert "Screenshot saved: /tmp/ghostmcp_screenshot.png" in result
+
+    @pytest.mark.asyncio
+    async def test_screenshot_inline_returns_image_block(self):
+        """With screenshot_inline=True and a real PNG on disk, ghost_render returns
+        a list of MCP content blocks: a text block plus an image block (base64 PNG)."""
+        import base64
+        import os
+        import tempfile
+
+        # A minimal valid 1x1 PNG
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tf.write(png_bytes)
+            tmp_path = tf.name
+
+        try:
+            mock_report = RenderReport(
+                url="https://test.com",
+                title="Screenshot Test",
+                rendered_html="<div>Content</div>",
+                status_code=200,
+                final_url="https://test.com",
+                load_time_ms=100,
+                screenshot_path=tmp_path,
+            )
+            with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+                from ghostmcp.mcp import ghost_render
+                result = await ghost_render(
+                    url="https://test.com", screenshot=True, screenshot_inline=True
+                )
+
+            assert isinstance(result, list)
+            types = [b.get("type") for b in result]
+            assert "text" in types and "image" in types
+            img = next(b for b in result if b["type"] == "image")
+            assert img["mimeType"] == "image/png"
+            # data must be the base64 of the file we wrote
+            assert img["data"] == base64.b64encode(png_bytes).decode("ascii")
+        finally:
+            os.unlink(tmp_path)

@@ -21,6 +21,7 @@ class RenderReport:
     load_time_ms: int = 0
     screenshot_path: str | None = None
     error: str | None = None
+    device_info: dict | None = None   # Effective emulation (name, viewport, DPR, mobile, touch)
 
 
 async def render_page(
@@ -31,6 +32,8 @@ async def render_page(
     screenshot_path: str = "/tmp/ghostmcp_screenshot.png",
     timeout_ms: int = 30000,
     route_handler=None,
+    ignore_https_errors: bool = True,
+    device: str | None = None,
 ) -> RenderReport:
     """Render a page with headless Chromium and capture console output.
 
@@ -47,6 +50,12 @@ async def render_page(
             (instead of the data: URL trick which breaks relative URLs,
             /api calls and localStorage). When None, the browser navigates and
             fetches normally.
+        device: Optional Playwright device-registry name (e.g. "Pixel 7",
+            "iPhone 14 Pro Max", "iPad Pro 11"). When set, emulates that device
+            exactly — viewport, device-scale-factor, mobile user-agent, and
+            touch — for realistic mobile/tablet visual review. Overrides the
+            default desktop 1920x1080 (and any stealth UA/viewport). Unknown
+            names are reported as an error listing available devices.
 
     Returns:
         RenderReport with rendered DOM, console output, and JS errors.
@@ -85,6 +94,41 @@ async def render_page(
                     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "viewport": {"width": 1920, "height": 1080},
                 }
+
+            # Device emulation: when a device name is given, Playwright's device
+            # registry supplies the exact viewport, device_scale_factor, mobile
+            # user_agent, is_mobile and has_touch. These OVERRIDE the desktop
+            # defaults / stealth UA above so mobile/tablet visual review is
+            # pixel-accurate (e.g. a Pixel 7 renders at 412x915 @ DPR 2.625).
+            if device:
+                device_profile = p.devices.get(device)
+                if device_profile is None:
+                    available = ", ".join(sorted(p.devices.keys()))
+                    return RenderReport(
+                        url=url,
+                        error=(
+                            f"Unknown device '{device}'. Available devices: {available}"
+                        ),
+                    )
+                # Drop any desktop 'screen' from stealth/defaults — it would
+                # contradict the device's mobile viewport. Device profile wins
+                # on every overlapping key (UA, viewport, is_mobile, has_touch).
+                ctx_options.pop("screen", None)
+                ctx_options = {**ctx_options, **device_profile}
+                report.device_info = {
+                    "device": device,
+                    "viewport": device_profile.get("viewport"),
+                    "device_scale_factor": device_profile.get("device_scale_factor"),
+                    "is_mobile": device_profile.get("is_mobile"),
+                    "has_touch": device_profile.get("has_touch"),
+                    "user_agent": device_profile.get("user_agent"),
+                }
+
+            # Accept self-signed / expired / name-mismatch certs when asked. This
+            # is a security tool — rendering internal apps behind bad certs is a
+            # legitimate need; validation shouldn't block DOM inspection.
+            if ignore_https_errors:
+                ctx_options["ignore_https_errors"] = True
 
             context = await browser.new_context(**ctx_options)
             page = await context.new_page()

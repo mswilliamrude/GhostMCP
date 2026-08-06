@@ -400,9 +400,19 @@ class MCPServer:
             try:
                 handler = self._handlers[tool_name]
                 result = await handler(**arguments)
-                return self._response(req_id, {
-                    "content": [{"type": "text", "text": str(result)}],
-                })
+                # Backward-compatible content handling:
+                #  - If a tool returns a list of MCP content blocks (dicts with a
+                #    "type" key, e.g. text/image), pass them through verbatim so
+                #    tools can emit images (base64 PNG) alongside text.
+                #  - Otherwise, wrap the stringified result in a text block
+                #    (unchanged behavior for all existing str-returning tools).
+                if isinstance(result, list) and all(
+                    isinstance(b, dict) and "type" in b for b in result
+                ):
+                    content = result
+                else:
+                    content = [{"type": "text", "text": str(result)}]
+                return self._response(req_id, {"content": content})
             except Exception as e:
                 return self._response(req_id, {
                     "content": [{"type": "text", "text": f"Error: {e}"}],
@@ -1770,7 +1780,9 @@ async def ghost_cert(
         "Render a web page using headless Chromium browser. Captures the rendered DOM "
         "(after JavaScript execution), console.log/error output, and uncaught JS errors. "
         "Essential for debugging SPAs (Vue, React, Angular) where raw HTML contains "
-        "unresolved template syntax."
+        "unresolved template syntax. Supports mobile/tablet device emulation via the "
+        "'device' parameter (e.g. 'Pixel 7', 'iPhone 14 Pro Max') for realistic "
+        "responsive/visual review with the correct viewport, DPR, and touch."
     ),
     parameters={
         "url": {"type": "string", "description": "URL to render."},
@@ -1778,6 +1790,9 @@ async def ghost_cert(
         "execute": {"type": "string", "description": "Optional JavaScript to run after page loads."},
         "extract": {"type": "string", "description": "What to return: dom, console, errors, all (default all).", "default": "all"},
         "screenshot": {"type": "boolean", "description": "Take a screenshot (saved to /tmp).", "default": False},
+        "screenshot_inline": {"type": "boolean", "description": "Return the screenshot inline as an image the client can display (base64 PNG). Default True when screenshot is taken. Large shots over ~4MB fall back to path-only.", "default": True},
+        "ignore_https": {"type": "boolean", "description": "Ignore TLS cert errors (self-signed/expired/name-mismatch). Default True so internal apps behind bad certs still render.", "default": True},
+        "device": {"type": "string", "description": "Emulate a device by Playwright registry name (e.g. 'Pixel 7', 'iPhone 14 Pro Max', 'iPad Pro 11'). Sets viewport, device-scale-factor, mobile user-agent and touch. Omit for desktop 1920x1080. Unknown names return the list of available devices."},
     },
 )
 async def ghost_render(
@@ -1786,6 +1801,9 @@ async def ghost_render(
     execute: Optional[str] = None,
     extract: str = "all",
     screenshot: bool = False,
+    screenshot_inline: bool = True,
+    ignore_https: bool = True,
+    device: Optional[str] = None,
 ) -> str:
     """Render a page with headless browser and capture console output."""
     
@@ -1845,6 +1863,7 @@ async def ghost_render(
             execute_js=execute,
             capture_screenshot=screenshot,
             route_handler=_bridge_route,
+            device=device,
         )
         report.final_url = (report.final_url or url) + " (via bridge)"
     else:
@@ -1853,6 +1872,8 @@ async def ghost_render(
             wait_ms=wait,
             execute_js=execute,
             capture_screenshot=screenshot,
+            ignore_https_errors=ignore_https,
+            device=device,
         )
 
     if report.error:
@@ -1865,6 +1886,14 @@ async def ghost_render(
         lines.append(f"URL: {report.final_url or report.url}")
         lines.append(f"Status: {report.status_code}")
         lines.append(f"Load time: {report.load_time_ms}ms")
+        if report.device_info:
+            di = report.device_info
+            vp = di.get("viewport") or {}
+            lines.append(
+                f"Device: {di.get('device')} — {vp.get('width')}x{vp.get('height')} "
+                f"@ DPR {di.get('device_scale_factor')} "
+                f"(mobile={di.get('is_mobile')}, touch={di.get('has_touch')})"
+            )
         lines.append("")
         # Truncate rendered HTML for context window sanity
         html = report.rendered_html
@@ -1888,10 +1917,38 @@ async def ghost_render(
         elif extract == "errors":
             lines.append("No JavaScript errors detected.")
 
-    if report.screenshot_path and screenshot:
-        lines.append(f"\nScreenshot saved: {report.screenshot_path}")
+    text_body = "\n".join(lines) if lines else "Page rendered successfully but no content extracted."
 
-    return "\n".join(lines) if lines else "Page rendered successfully but no content extracted."
+    # Screenshot egress. When a screenshot was captured and inline return is
+    # requested, read the PNG and emit it as an MCP image content block so the
+    # client (and agent) can SEE it directly — no manual file copy needed.
+    # Guard against oversized responses: PNGs above the cap fall back to path.
+    if report.screenshot_path and screenshot:
+        if screenshot_inline:
+            try:
+                import base64 as _b64
+                import os as _os
+                _MAX_INLINE_BYTES = 4 * 1024 * 1024  # ~4MB PNG cap
+                _size = _os.path.getsize(report.screenshot_path)
+                if _size <= _MAX_INLINE_BYTES:
+                    with open(report.screenshot_path, "rb") as _f:
+                        _b64png = _b64.b64encode(_f.read()).decode("ascii")
+                    text_body += f"\n\nScreenshot ({_size} bytes) returned inline below. Also saved: {report.screenshot_path}"
+                    return [
+                        {"type": "text", "text": text_body},
+                        {"type": "image", "data": _b64png, "mimeType": "image/png"},
+                    ]
+                else:
+                    text_body += (
+                        f"\n\nScreenshot saved: {report.screenshot_path} "
+                        f"({_size} bytes — exceeds {_MAX_INLINE_BYTES}B inline cap, not embedded)"
+                    )
+            except Exception as _e:
+                text_body += f"\n\nScreenshot saved: {report.screenshot_path} (inline encode failed: {_e})"
+        else:
+            text_body += f"\n\nScreenshot saved: {report.screenshot_path}"
+
+    return text_body
 
 
 # ---------------------------------------------------------------------------
