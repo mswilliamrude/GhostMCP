@@ -164,8 +164,11 @@ async def human_scroll(
         chunk = random.randint(30, 100) * (1.5 - progress)
         chunk = min(chunk, total - scrolled)
 
-        await page.evaluate(f"window.scrollBy(0, {int(chunk * sign)})")
-        scrolled += chunk
+        # Round to at least 1px in the scroll direction. int() truncation on a
+        # sub-1 final remainder would otherwise emit a useless scrollBy(0, 0).
+        step = max(1, int(round(chunk)))
+        await page.evaluate(f"window.scrollBy(0, {step * sign})")
+        scrolled += step
 
         # Variable delay (faster during momentum, slower as stopping)
         delay = random.uniform(0.01, 0.04) * (0.5 + progress)
