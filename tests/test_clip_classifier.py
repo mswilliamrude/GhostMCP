@@ -47,6 +47,20 @@ class TestModelDetection:
 
 
 class TestModelLifecycle:
+    @pytest.fixture(autouse=True)
+    def _reset_model_state(self):
+        """Reset the module-level model globals before AND after each test.
+
+        clip_classifier keeps _model / _last_used / _model_name as module
+        globals. Other test files (and earlier tests here) can leave that state
+        dirty, which made test_maybe_unload_when_idle fail only in the full
+        suite (pollution) while passing in isolation. Reset guarantees a clean
+        slate regardless of test order.
+        """
+        _unload_model()
+        yield
+        _unload_model()
+
     def test_not_loaded_initially(self):
         """Model is not in memory at import time."""
         _unload_model()
