@@ -11,11 +11,14 @@ any API keys.
 | Provider | Env Variable | Free Tier | Sign Up | Used By |
 |----------|-------------|-----------|---------|---------|
 | **Serper.dev** | `SERPER_API_KEY` | 2,500 queries (one-time) | https://serper.dev | `ghost_search`, `ghost_dork` |
-| **Brave Search** | `BRAVE_API_KEY` | 2,000 queries/month | https://brave.com/search/api/ | `ghost_search` (planned) |
+| **Brave Search** | `BRAVE_API_KEY` | 2,000 queries/month | https://brave.com/search/api/ | `ghost_search`, media search |
+| **Bing** | `BING_API_KEY` | Limited | Azure portal | `ghost_search` |
+| **SearXNG** | None (self-hosted) | Unlimited | Docker Compose | `ghost_searxng` |
 | **DuckDuckGo** | None required | Unlimited (scraping) | N/A | `ghost_search`, `ghost_dork` |
 | **Google** | None required | Unlimited (scraping, CAPTCHA risk) | N/A | `ghost_search`, `ghost_dork` |
 
-**Auto-fallback chain:** Serper → Brave (planned) → Google → DDG Lite
+**Auto-fallback chain (API engines first, scrapers last):**
+Serper → Brave → Bing → SearXNG → Google → DDG Lite
 
 ---
 
@@ -49,7 +52,7 @@ any API keys.
 |----------|-------------|-----------|-----------|---------|
 | **VirusTotal** | `VT_API_KEY` | 4 req/min | $0+ (community) | `ghost_hash` |
 | **Serper.dev** | `SERPER_API_KEY` | 2,500 one-time | $50/mo (10K) | `ghost_search` |
-| **Brave Search** | `BRAVE_API_KEY` | 2,000/month | $5/mo (20K) | `ghost_search` (planned) |
+| **Brave Search** | `BRAVE_API_KEY` | 2,000/month | $5/mo (20K) | `ghost_search`, media search |
 
 ---
 
@@ -59,7 +62,7 @@ any API keys.
 
 | Provider | Env Variable | Free Tier | Category | Status |
 |----------|-------------|-----------|----------|--------|
-| **HIBP** | `HIBP_API_KEY` | Single lookups free | Breach monitoring | Backlog |
+| **HIBP** | `GHOST_HIBP_KEY` | Single lookups free | Breach monitoring | Backlog |
 | **Dehashed** | `DEHASHED_API_KEY` | None ($5/week) | Credential search | Backlog |
 
 ### Planned — Medium Priority
@@ -99,9 +102,10 @@ any API keys.
   "mcp": {
     "ghostmcp": {
       "type": "local",
-      "command": ["python3", "ghost_client.py", "--proxy", "--config", "~/.ghost_client.yaml"],
+      "command": ["python3", "-m", "ghostmcp"],
       "enabled": true,
       "environment": {
+        "PYTHONPATH": "/path/to/GhostMCP",
         "SERPER_API_KEY": "your-serper-key",
         "BRAVE_API_KEY": "your-brave-key",
         "VT_API_KEY": "your-virustotal-key"
@@ -153,4 +157,4 @@ environmentVariables:
 
 ---
 
-*Last updated: 2026-06-18*
+*Last updated: 2026-06-18 (revised — Brave/Bing/SearXNG shipped, paths + HIBP env var corrected)*

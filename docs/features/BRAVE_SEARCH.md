@@ -1,10 +1,14 @@
 # Feature: Brave Search API Integration
 
-**Date:** 2026-06-18
-**Status:** PROPOSED
-**Branch:** `feature/brave-search`
+**Date:** 2026-06-18 (proposed) · **Implemented:** shipped to `main`
+**Status:** IMPLEMENTED
 **Priority:** Medium
-**Effort:** ~150 lines (BraveEngine class + tests)
+
+> **This feature has shipped.** The design below is retained as a record.
+> Live code: `ghostmcp/engines/brave.py` (`BraveEngine`) and
+> `ghostmcp/engines/brave_media.py` (`BraveMediaEngine` — images/videos/news),
+> registered in `ghostmcp/mcp.py`. Tests: `tests/test_brave.py` (22 tests).
+> Exposed via `ghost_search(engine="brave")` and the media search tool.
 
 ---
 
@@ -79,9 +83,9 @@ curl -s "https://api.search.brave.com/res/v1/web/search?q=Python+asyncio" \
 | News Search | `/res/v1/news/search` | News articles |
 | Summarizer | `/res/v1/summarizer/search` | AI-generated summary + sources |
 
-## Implementation Plan
+## Implementation
 
-### BraveEngine class (`src/engines/brave.py`)
+### BraveEngine class (`ghostmcp/engines/brave.py`)
 
 ```python
 class BraveEngine(SearchEngine):
@@ -103,14 +107,16 @@ class BraveEngine(SearchEngine):
         # Return list[SearchResult]
 ```
 
-### Auto-fallback chain update (`src/mcp.py`)
+### Auto-fallback chain (`ghostmcp/mcp.py`)
 
-Current: Serper → Google → DDG Lite
+As shipped, API engines register ahead of scrapers, in this order:
 
-New: Serper → Brave → Google → DDG Lite
+**Serper → Brave → Bing → SearXNG → Google → DDG Lite**
 
-Brave slots in after Serper (both are API-based with structured JSON) and before
-Google scraping (which is fragile and CAPTCHA-prone).
+Brave slots in after Serper (both API-based with structured JSON) and ahead of
+the scrapers (Google/DDG), which are fragile and CAPTCHA-prone. Each engine only
+registers if `available` (Brave requires `BRAVE_API_KEY`). Brave is rate-limited
+conservatively (~30 per 10-min window, ≈67/day against the 2,000/month tier).
 
 ### Environment variable
 
@@ -118,7 +124,7 @@ Google scraping (which is fragile and CAPTCHA-prone).
 BRAVE_API_KEY=your-brave-api-key-here
 ```
 
-### Tests (`tests/test_brave.py`)
+### Tests (`tests/test_brave.py`) — 22 tests
 
 - Mock API response parsing
 - Key detection (available/not available)
@@ -135,16 +141,16 @@ BRAVE_API_KEY=your-brave-api-key-here
 | **Google** | Scrape | None | Unlimited | Low (CAPTCHAs) | Best |
 | **DDG Lite** | Scrape | None | Unlimited | Medium (throttling) | Good |
 
-## Files to Create/Modify
+## Files (as shipped)
 
-| File | Action | Description |
-|------|--------|-------------|
-| `src/engines/brave.py` | Create | BraveEngine class |
-| `tests/test_brave.py` | Create | Unit tests |
-| `src/mcp.py` | Modify | Add to auto-fallback chain |
-| `README.md` | Modify | Add Brave to API key docs |
-| `docs/status/PROJECT_STATUS.md` | Modify | Update sprint/backlog |
+| File | Description |
+|------|-------------|
+| `ghostmcp/engines/brave.py` | `BraveEngine` class |
+| `ghostmcp/engines/brave_media.py` | `BraveMediaEngine` (images/videos/news) |
+| `tests/test_brave.py` | Unit tests (22) |
+| `ghostmcp/mcp.py` | Registered in the auto-fallback chain + media tool |
 
 ---
 
-*Feature requested during session 2026-06-18. Branch created, implementation pending.*
+*Proposed 2026-06-18 on `feature/brave-search`; implemented and merged to `main`.
+Doc retained as a design record (branch since deleted).*
