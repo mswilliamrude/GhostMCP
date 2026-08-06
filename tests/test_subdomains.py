@@ -277,21 +277,21 @@ class TestResolveHost:
     """Tests for _resolve_host() helper."""
 
     def test_successful_resolution(self):
-        with patch("src.recon.subdomains.socket.getaddrinfo", return_value=[("AF_INET",)]):
+        with patch("ghostmcp.recon.subdomains.socket.getaddrinfo", return_value=[("AF_INET",)]):
             assert _resolve_host("www.example.com", 2.0) is True
 
     def test_failed_resolution(self):
-        with patch("src.recon.subdomains.socket.getaddrinfo",
+        with patch("ghostmcp.recon.subdomains.socket.getaddrinfo",
                    side_effect=socket.gaierror("Name or service not known")):
             assert _resolve_host("nonexistent.example.com", 2.0) is False
 
     def test_timeout_resolution(self):
-        with patch("src.recon.subdomains.socket.getaddrinfo",
+        with patch("ghostmcp.recon.subdomains.socket.getaddrinfo",
                    side_effect=socket.timeout("timed out")):
             assert _resolve_host("slow.example.com", 0.1) is False
 
     def test_os_error_resolution(self):
-        with patch("src.recon.subdomains.socket.getaddrinfo",
+        with patch("ghostmcp.recon.subdomains.socket.getaddrinfo",
                    side_effect=OSError("Network error")):
             assert _resolve_host("bad.example.com", 2.0) is False
 
@@ -307,7 +307,7 @@ class TestDnsBruteForce:
         def mock_resolve(fqdn, timeout):
             return fqdn in resolving
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             result = await dns_brute_force("example.com", wordlist=["www", "api", "nope"])
 
         assert "www.example.com" in result
@@ -320,7 +320,7 @@ class TestDnsBruteForce:
         def mock_resolve(fqdn, timeout):
             return True
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             result = await dns_brute_force("example.com", wordlist=["zzz", "aaa", "mmm"])
 
         assert result == sorted(result)
@@ -334,7 +334,7 @@ class TestDnsBruteForce:
             called_fqdns.append(fqdn)
             return False
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             result = await dns_brute_force("example.com")
 
         assert len(called_fqdns) == len(DEFAULT_WORDLIST)
@@ -346,7 +346,7 @@ class TestDnsBruteForce:
         def mock_resolve(fqdn, timeout):
             return fqdn == "custom.example.com"
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             result = await dns_brute_force("example.com", wordlist=["custom", "other"])
 
         assert result == ["custom.example.com"]
@@ -354,7 +354,7 @@ class TestDnsBruteForce:
     @pytest.mark.asyncio
     async def test_empty_wordlist(self):
         """Empty wordlist should return no results."""
-        with patch("src.recon.subdomains._resolve_host") as mock:
+        with patch("ghostmcp.recon.subdomains._resolve_host") as mock:
             result = await dns_brute_force("example.com", wordlist=[])
 
         assert result == []
@@ -366,7 +366,7 @@ class TestDnsBruteForce:
         def mock_resolve(fqdn, timeout):
             return False
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             result = await dns_brute_force("example.com", wordlist=["www", "mail", "ftp"])
 
         assert result == []
@@ -380,7 +380,7 @@ class TestDnsBruteForce:
             called_fqdns.append(fqdn)
             return False
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             await dns_brute_force("EXAMPLE.COM", wordlist=["www"])
 
         assert called_fqdns == ["www.example.com"]
@@ -394,7 +394,7 @@ class TestDnsBruteForce:
             timeouts_seen.append(timeout)
             return False
 
-        with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+        with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
             await dns_brute_force("example.com", wordlist=["www"], timeout=5.0)
 
         assert timeouts_seen == [5.0]
@@ -429,7 +429,7 @@ class TestGhostSubdomainsMethodAll:
             return fqdn in ("www.example.com", "mail.example.com")
 
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
-            with patch("src.recon.subdomains._resolve_host", side_effect=mock_resolve):
+            with patch("ghostmcp.recon.subdomains._resolve_host", side_effect=mock_resolve):
                 from ghostmcp.mcp import ghost_subdomains
                 result = await ghost_subdomains("example.com", method="all")
 

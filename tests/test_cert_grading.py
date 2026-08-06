@@ -657,7 +657,7 @@ class TestJARMFingerprint:
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    return_value=(mock_reader, mock_writer)):
             result = await _send_jarm_probe(
                 "example.com", 443, (3, 3), [0xc02f, 0xc030]
@@ -670,7 +670,7 @@ class TestJARMFingerprint:
     @pytest.mark.asyncio
     async def test_send_jarm_probe_timeout(self):
         """Timeout returns empty fingerprint."""
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    side_effect=asyncio.TimeoutError()):
             result = await _send_jarm_probe(
                 "slow.example.com", 443, (3, 3), [0xc02f]
@@ -680,7 +680,7 @@ class TestJARMFingerprint:
     @pytest.mark.asyncio
     async def test_send_jarm_probe_connection_refused(self):
         """Connection refused returns empty fingerprint."""
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    side_effect=ConnectionRefusedError()):
             result = await _send_jarm_probe(
                 "down.example.com", 443, (3, 3), [0xc02f]
@@ -699,7 +699,7 @@ class TestJARMFingerprint:
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    return_value=(mock_reader, mock_writer)):
             result = await _send_jarm_probe(
                 "example.com", 443, (3, 3), [0xc02f]
@@ -724,7 +724,7 @@ class TestJARMFingerprint:
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    return_value=(mock_reader, mock_writer)):
             result = await jarm_fingerprint("example.com", 443)
 
@@ -735,7 +735,7 @@ class TestJARMFingerprint:
     @pytest.mark.asyncio
     async def test_jarm_fingerprint_all_probes_fail(self):
         """All probes failing returns empty string."""
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    side_effect=ConnectionRefusedError()):
             result = await jarm_fingerprint("down.example.com", 443)
         assert result == ""
@@ -774,7 +774,7 @@ class TestJARMFingerprint:
             else:
                 raise ConnectionRefusedError()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    side_effect=mock_open_connection):
             result = await jarm_fingerprint("partial.example.com", 443)
 
@@ -799,7 +799,7 @@ class TestJARMFingerprint:
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    return_value=(mock_reader, mock_writer)):
             result1 = await jarm_fingerprint("example.com", 443)
 
@@ -812,7 +812,7 @@ class TestJARMFingerprint:
         mock_writer2.close = MagicMock()
         mock_writer2.wait_closed = AsyncMock()
 
-        with patch("src.recon.certs.asyncio.open_connection",
+        with patch("ghostmcp.recon.certs.asyncio.open_connection",
                    return_value=(mock_reader2, mock_writer2)):
             result2 = await jarm_fingerprint("example.com", 443)
 
@@ -871,8 +871,8 @@ class TestIntegrationGrading:
 
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock):
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock):
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.return_value = ssock
                 mock_ctx_cls.return_value = mock_ctx
@@ -891,7 +891,7 @@ class TestIntegrationGrading:
         """inspect_cert with connection error should skip grading."""
         from ghostmcp.recon.certs import inspect_cert
 
-        with patch("src.recon.certs.socket.create_connection",
+        with patch("ghostmcp.recon.certs.socket.create_connection",
                    side_effect=ConnectionRefusedError("refused")):
             report = await inspect_cert("bad.example.com")
 

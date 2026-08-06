@@ -559,10 +559,10 @@ class TestBreachSearch:
     @pytest.mark.asyncio
     async def test_full_mode_checks_all_providers(self):
         """full mode should check HIBP + Snusbase + DeHashed + LeakCheck."""
-        with patch("src.recon.breach._query_hibp", new_callable=AsyncMock) as mock_hibp, \
-             patch("src.recon.breach._query_snusbase", new_callable=AsyncMock) as mock_snus, \
-             patch("src.recon.breach._query_dehashed", new_callable=AsyncMock) as mock_dh, \
-             patch("src.recon.breach._query_leakcheck", new_callable=AsyncMock) as mock_lc:
+        with patch("ghostmcp.recon.breach._query_hibp", new_callable=AsyncMock) as mock_hibp, \
+             patch("ghostmcp.recon.breach._query_snusbase", new_callable=AsyncMock) as mock_snus, \
+             patch("ghostmcp.recon.breach._query_dehashed", new_callable=AsyncMock) as mock_dh, \
+             patch("ghostmcp.recon.breach._query_leakcheck", new_callable=AsyncMock) as mock_lc:
             result = await breach_search("test@example.com", mode="full")
 
         assert "hibp" in result.providers_checked
@@ -583,10 +583,10 @@ class TestBreachSearch:
                 data_classes=["Email addresses"],
             ))
 
-        with patch("src.recon.breach._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.breach._query_snusbase", side_effect=add_dupes), \
-             patch("src.recon.breach._query_dehashed", new_callable=AsyncMock), \
-             patch("src.recon.breach._query_leakcheck", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.breach._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.breach._query_snusbase", side_effect=add_dupes), \
+             patch("ghostmcp.recon.breach._query_dehashed", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.breach._query_leakcheck", new_callable=AsyncMock):
             result = await breach_search("test@example.com", mode="full")
 
         # Same (source, breach_name) should appear only once
@@ -605,10 +605,10 @@ class TestBreachSearch:
         async def fail_dehashed(client, query, qtype, result):
             result.providers_failed["dehashed"] = "Connection error"
 
-        with patch("src.recon.breach._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.breach._query_snusbase", side_effect=succeed_snusbase), \
-             patch("src.recon.breach._query_dehashed", side_effect=fail_dehashed), \
-             patch("src.recon.breach._query_leakcheck", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.breach._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.breach._query_snusbase", side_effect=succeed_snusbase), \
+             patch("ghostmcp.recon.breach._query_dehashed", side_effect=fail_dehashed), \
+             patch("ghostmcp.recon.breach._query_leakcheck", new_callable=AsyncMock):
             result = await breach_search("test@example.com", mode="full")
 
         assert len(result.records) >= 1
@@ -646,7 +646,7 @@ class TestBreachSearch:
                 data_classes=["Passwords"],
             ))
 
-        with patch("src.recon.breach._query_hibp", side_effect=add_records):
+        with patch("ghostmcp.recon.breach._query_hibp", side_effect=add_records):
             result = await breach_search("test@example.com", mode="metadata_only")
 
         assert result.total_breaches == 2
@@ -654,7 +654,7 @@ class TestBreachSearch:
     @pytest.mark.asyncio
     async def test_non_email_skips_hibp(self):
         """HIBP only supports email — phone queries should skip it."""
-        with patch("src.recon.breach._query_hibp", new_callable=AsyncMock) as mock_hibp:
+        with patch("ghostmcp.recon.breach._query_hibp", new_callable=AsyncMock) as mock_hibp:
             with patch.dict("os.environ", {}, clear=True):
                 result = await breach_search("2145551234", query_type="phone", mode="metadata_only")
 

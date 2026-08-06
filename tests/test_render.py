@@ -413,7 +413,7 @@ class TestGhostRenderTool:
             load_time_ms=500,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="all")
 
@@ -440,7 +440,7 @@ class TestGhostRenderTool:
             load_time_ms=100,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="dom")
 
@@ -464,7 +464,7 @@ class TestGhostRenderTool:
             load_time_ms=100,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="console")
 
@@ -489,7 +489,7 @@ class TestGhostRenderTool:
             load_time_ms=100,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="errors")
 
@@ -513,7 +513,7 @@ class TestGhostRenderTool:
             load_time_ms=100,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="errors")
 
@@ -527,7 +527,7 @@ class TestGhostRenderTool:
             error="TimeoutError: page did not load",
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com")
 
@@ -546,7 +546,7 @@ class TestGhostRenderTool:
             load_time_ms=100,
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", extract="dom")
 
@@ -567,7 +567,7 @@ class TestGhostRenderTool:
             screenshot_path="/tmp/ghostmcp_screenshot.png",
         )
 
-        with patch("src.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
+        with patch("ghostmcp.mcp.render_page", new_callable=AsyncMock, return_value=mock_report):
             from ghostmcp.mcp import ghost_render
             result = await ghost_render(url="https://test.com", screenshot=True)
 

@@ -99,7 +99,7 @@ class TestOfflineAnalysis:
 
     def test_graceful_degradation_no_phonenumbers(self):
         """When phonenumbers is not installed, _offline_analysis returns an error."""
-        with patch("src.recon.phone._HAS_PHONENUMBERS", False):
+        with patch("ghostmcp.recon.phone._HAS_PHONENUMBERS", False):
             report = _offline_analysis("+12145551234", "US")
             assert report.error is not None
             assert "phonenumbers library not installed" in report.error
@@ -117,11 +117,11 @@ class TestOfflineAnalysisMocked:
         mock_parsed = MagicMock()
         mock_parsed.country_code = 1
 
-        with patch("src.recon.phone._HAS_PHONENUMBERS", True), \
-             patch("src.recon.phone.phonenumbers", create=True) as mock_pn, \
-             patch("src.recon.phone.pn_carrier", create=True) as mock_carrier, \
-             patch("src.recon.phone.pn_geocoder", create=True) as mock_geo, \
-             patch("src.recon.phone.pn_timezone", create=True) as mock_tz:
+        with patch("ghostmcp.recon.phone._HAS_PHONENUMBERS", True), \
+             patch("ghostmcp.recon.phone.phonenumbers", create=True) as mock_pn, \
+             patch("ghostmcp.recon.phone.pn_carrier", create=True) as mock_carrier, \
+             patch("ghostmcp.recon.phone.pn_geocoder", create=True) as mock_geo, \
+             patch("ghostmcp.recon.phone.pn_timezone", create=True) as mock_tz:
 
             mock_pn.parse.return_value = mock_parsed
             mock_pn.is_valid_number.return_value = True
@@ -157,8 +157,8 @@ class TestOfflineAnalysisMocked:
         assert report.timezone == "America/Chicago"
 
     def test_parse_exception_with_mock(self):
-        with patch("src.recon.phone._HAS_PHONENUMBERS", True), \
-             patch("src.recon.phone.phonenumbers", create=True) as mock_pn:
+        with patch("ghostmcp.recon.phone._HAS_PHONENUMBERS", True), \
+             patch("ghostmcp.recon.phone.phonenumbers", create=True) as mock_pn:
 
             mock_pn.NumberParseException = type("NumberParseException", (Exception,), {})
             mock_pn.parse.side_effect = mock_pn.NumberParseException("bad number")

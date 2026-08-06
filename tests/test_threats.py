@@ -423,10 +423,10 @@ class TestThreatLookup:
 
     @pytest.mark.asyncio
     async def test_aggregates_multiple_sources(self):
-        with patch("src.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
-             patch("src.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf, \
-             patch("src.recon.threats.query_ransomwatch", new_callable=AsyncMock) as mock_rw, \
-             patch("src.recon.threats.query_feodo", new_callable=AsyncMock) as mock_fe:
+        with patch("ghostmcp.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
+             patch("ghostmcp.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf, \
+             patch("ghostmcp.recon.threats.query_ransomwatch", new_callable=AsyncMock) as mock_rw, \
+             patch("ghostmcp.recon.threats.query_feodo", new_callable=AsyncMock) as mock_fe:
 
             mock_uh.return_value = [
                 ThreatEntry("urlhaus", "http://evil.com", "url", "malware", "emotet", [], "", ""),
@@ -447,7 +447,7 @@ class TestThreatLookup:
 
     @pytest.mark.asyncio
     async def test_filters_by_source(self):
-        with patch("src.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh:
+        with patch("ghostmcp.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh:
             mock_uh.return_value = [
                 ThreatEntry("urlhaus", "http://evil.com", "url", "malware", "", [], "", ""),
             ]
@@ -459,8 +459,8 @@ class TestThreatLookup:
 
     @pytest.mark.asyncio
     async def test_handles_source_error(self):
-        with patch("src.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
-             patch("src.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf:
+        with patch("ghostmcp.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
+             patch("ghostmcp.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf:
 
             mock_uh.side_effect = RuntimeError("connection failed")
             mock_tf.return_value = []
@@ -481,7 +481,7 @@ class TestThreatLookup:
 
     @pytest.mark.asyncio
     async def test_query_stored_in_report(self):
-        with patch("src.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh:
+        with patch("ghostmcp.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh:
             mock_uh.return_value = []
             report = await threat_lookup("192.168.1.1", sources=["urlhaus"])
 
@@ -489,10 +489,10 @@ class TestThreatLookup:
 
     @pytest.mark.asyncio
     async def test_default_sources_includes_all(self):
-        with patch("src.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
-             patch("src.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf, \
-             patch("src.recon.threats.query_ransomwatch", new_callable=AsyncMock) as mock_rw, \
-             patch("src.recon.threats.query_feodo", new_callable=AsyncMock) as mock_fe:
+        with patch("ghostmcp.recon.threats.query_urlhaus", new_callable=AsyncMock) as mock_uh, \
+             patch("ghostmcp.recon.threats.query_threatfox_iocs", new_callable=AsyncMock) as mock_tf, \
+             patch("ghostmcp.recon.threats.query_ransomwatch", new_callable=AsyncMock) as mock_rw, \
+             patch("ghostmcp.recon.threats.query_feodo", new_callable=AsyncMock) as mock_fe:
 
             mock_uh.return_value = []
             mock_tf.return_value = []

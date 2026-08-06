@@ -22,7 +22,7 @@ from ghostmcp.captcha.clip_classifier import (
 class TestModelDetection:
     def test_default_model_name(self):
         """Without env marker, defaults to ViT-B-32."""
-        with patch("src.captcha.clip_classifier.MODEL_ENV_PATH", ""):
+        with patch("ghostmcp.captcha.clip_classifier.MODEL_ENV_PATH", ""):
             name, pretrained = _detect_model_name()
             assert name == "ViT-B-32"
             assert pretrained == "openai"
@@ -31,7 +31,7 @@ class TestModelDetection:
         """Reads model name from build-time marker file."""
         marker = tmp_path / "model_id.txt"
         marker.write_text("MobileCLIP-S2:datacomp_s_s2")
-        with patch("src.captcha.clip_classifier.MODEL_ENV_PATH", str(marker)):
+        with patch("ghostmcp.captcha.clip_classifier.MODEL_ENV_PATH", str(marker)):
             name, pretrained = _detect_model_name()
             assert name == "MobileCLIP-S2"
             assert pretrained == "datacomp_s_s2"
@@ -40,7 +40,7 @@ class TestModelDetection:
         """Malformed marker falls back to default."""
         marker = tmp_path / "model_id.txt"
         marker.write_text("garbage")
-        with patch("src.captcha.clip_classifier.MODEL_ENV_PATH", str(marker)):
+        with patch("ghostmcp.captcha.clip_classifier.MODEL_ENV_PATH", str(marker)):
             name, pretrained = _detect_model_name()
             assert name == "ViT-B-32"
             assert pretrained == "openai"

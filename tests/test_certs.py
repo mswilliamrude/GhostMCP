@@ -308,8 +308,8 @@ class TestInspectCert:
         mock_ssock = self._make_mock_ssock()
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock):
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock):
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.return_value = mock_ssock
                 mock_ctx_cls.return_value = mock_ctx
@@ -338,8 +338,8 @@ class TestInspectCert:
         mock_ssock = self._make_mock_ssock(cert_dict=cert_dict)
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock):
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock):
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.return_value = mock_ssock
                 mock_ctx_cls.return_value = mock_ctx
@@ -350,7 +350,7 @@ class TestInspectCert:
 
     @pytest.mark.asyncio
     async def test_connection_refused(self):
-        with patch("src.recon.certs.socket.create_connection",
+        with patch("ghostmcp.recon.certs.socket.create_connection",
                    side_effect=ConnectionRefusedError("refused")):
             report = await inspect_cert("noserver.example.com", port=8443)
 
@@ -361,7 +361,7 @@ class TestInspectCert:
 
     @pytest.mark.asyncio
     async def test_connection_timeout(self):
-        with patch("src.recon.certs.socket.create_connection",
+        with patch("ghostmcp.recon.certs.socket.create_connection",
                    side_effect=socket.timeout("timed out")):
             report = await inspect_cert("slow.example.com")
 
@@ -370,7 +370,7 @@ class TestInspectCert:
 
     @pytest.mark.asyncio
     async def test_os_error(self):
-        with patch("src.recon.certs.socket.create_connection",
+        with patch("ghostmcp.recon.certs.socket.create_connection",
                    side_effect=OSError("Network unreachable")):
             report = await inspect_cert("unreachable.example.com")
 
@@ -382,8 +382,8 @@ class TestInspectCert:
         mock_ssock = self._make_mock_ssock()
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock) as mock_conn:
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock) as mock_conn:
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.return_value = mock_ssock
                 mock_ctx_cls.return_value = mock_ctx
@@ -402,8 +402,8 @@ class TestInspectCert:
         mock_ssock = self._make_mock_ssock(der_cert=der_cert)
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock):
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock):
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.return_value = mock_ssock
                 mock_ctx_cls.return_value = mock_ctx
@@ -416,8 +416,8 @@ class TestInspectCert:
     async def test_ssl_error_handling(self):
         mock_sock = MagicMock()
 
-        with patch("src.recon.certs.socket.create_connection", return_value=mock_sock):
-            with patch("src.recon.certs.ssl.create_default_context") as mock_ctx_cls:
+        with patch("ghostmcp.recon.certs.socket.create_connection", return_value=mock_sock):
+            with patch("ghostmcp.recon.certs.ssl.create_default_context") as mock_ctx_cls:
                 mock_ctx = MagicMock()
                 mock_ctx.wrap_socket.side_effect = ssl.SSLError("SSL handshake failed")
                 mock_ctx_cls.return_value = mock_ctx
