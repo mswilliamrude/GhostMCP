@@ -1,5 +1,16 @@
 FROM python:3.12-slim
 
+# Pin apt to a firewall-reachable Debian mirror. The default deb.debian.org is
+# Fastly-fronted and rotates across many IPs; this host's egress allowlist blocks
+# some of those Fastly IPs (apt -> "Connection failed [IP: 151.101.x.x]"), while
+# cloudfront.debian.net (AWS CloudFront range) is consistently reachable.
+RUN set -eux; \
+    printf 'deb https://cloudfront.debian.net/debian trixie main\n\
+deb https://cloudfront.debian.net/debian trixie-updates main\n\
+deb https://cloudfront.debian.net/debian-security trixie-security main\n' \
+        > /etc/apt/sources.list; \
+    rm -f /etc/apt/sources.list.d/debian.sources
+
 # System deps for Playwright Chromium + SSH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \

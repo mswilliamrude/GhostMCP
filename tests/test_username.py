@@ -427,8 +427,8 @@ class TestUsernameLookup:
     @pytest.mark.asyncio
     async def test_falls_back_to_builtin(self):
         """When no external tool is found, uses builtin checker."""
-        with patch("src.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
-             patch("src.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
+        with patch("ghostmcp.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
+             patch("ghostmcp.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
             mock_ext.return_value = None  # no tools installed
             mock_builtin.return_value = UsernameReport(
                 username="johndoe",
@@ -444,8 +444,8 @@ class TestUsernameLookup:
     @pytest.mark.asyncio
     async def test_uses_external_when_available(self):
         """When maigret/sherlock found, skips builtin."""
-        with patch("src.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
-             patch("src.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
+        with patch("ghostmcp.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
+             patch("ghostmcp.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
             mock_ext.return_value = UsernameReport(
                 username="johndoe",
                 tool_used="maigret",
@@ -459,8 +459,8 @@ class TestUsernameLookup:
 
     @pytest.mark.asyncio
     async def test_username_stripped(self):
-        with patch("src.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
-             patch("src.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
+        with patch("ghostmcp.recon.username._run_external_tool", new_callable=AsyncMock) as mock_ext, \
+             patch("ghostmcp.recon.username._builtin_check", new_callable=AsyncMock) as mock_builtin:
             mock_ext.return_value = None
             mock_builtin.return_value = UsernameReport(username="johndoe")
             report = await username_lookup("  johndoe  ")

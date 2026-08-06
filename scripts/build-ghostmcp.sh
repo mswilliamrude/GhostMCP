@@ -17,7 +17,13 @@
 #   build-ghostmcp deploy             Build + deploy to Azure Container Instances
 #   build-ghostmcp teardown           Delete ACI container group
 #
+# This script lives in <repo>/scripts/ and resolves the repo root as its
+# parent directory. All Docker build contexts are the repo root, and every
+# Dockerfile (Dockerfile, Dockerfile.base, Dockerfile.layer*, Dockerfile.render)
+# lives at the repo root.
+#
 # Environment:
+#   GHOST_ROOT          Repo root override (default: parent of scripts/)
 #   GHOST_IMAGE         Docker image name (default: ghostmcp:latest)
 #   GHOST_CONTAINER     Container name (default: ghostmcp-dev)
 #   GHOST_SSH_PORT      Local SSH port mapping (default: 2222)
@@ -43,14 +49,15 @@ if command -v az &>/dev/null; then
 fi
 
 # --- Container runtime detection ---
-# Priority: --podman flag > az acr (Windows + Azure) > docker > podman
+# Priority: --podman flag > --azure flag > az acr (Windows + Azure) > docker > podman
 # Falls back to podman if docker isn't available (rootless, no sudo needed)
 FORCE_PODMAN=false
+FORCE_AZURE=false
 for arg in "$@"; do
-    if [ "$arg" = "--podman" ]; then
-        FORCE_PODMAN=true
-        break
-    fi
+    case "$arg" in
+        --podman) FORCE_PODMAN=true ;;
+        --azure)  FORCE_AZURE=true ;;
+    esac
 done
 
 detect_container_runtime() {
@@ -59,6 +66,15 @@ detect_container_runtime() {
             echo "podman"
         else
             echo "[ERROR] --podman requested but podman not found" >&2
+            echo "none"
+        fi
+        return
+    fi
+    if [ "$FORCE_AZURE" = true ]; then
+        if [ "$HAS_AZ" = true ]; then
+            echo "az"  # Azure ACR build (forced)
+        else
+            echo "[ERROR] --azure requested but Azure CLI (az) not found" >&2
             echo "none"
         fi
         return
@@ -126,34 +142,43 @@ GHOST_VNET="${GHOST_VNET:-}"
 GHOST_SUBNET="${GHOST_SUBNET:-}"
 GHOST_CONTAINER_GROUP="${GHOST_CONTAINER_GROUP:-ghostmcp-app}"
 
-# --- Resolve source directory ---
-resolve_src_dir() {
-    if [ -n "${GHOST_SRC:-}" ]; then
-        echo "$GHOST_SRC"
+# --- Resolve repo root ---
+# This script lives in <repo>/scripts/. The repo root is its parent directory.
+# The root must contain the app Dockerfile and the ghostmcp/ package.
+resolve_repo_root() {
+    if [ -n "${GHOST_ROOT:-}" ]; then
+        echo "$GHOST_ROOT"
         return
     fi
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [ -f "$script_dir/Dockerfile" ] && [ -d "$script_dir/src" ]; then
-        echo "$script_dir"
+    local root
+    root="$(cd "$script_dir/.." && pwd)"
+    if [ -f "$root/Dockerfile" ] && [ -d "$root/ghostmcp" ]; then
+        echo "$root"
         return
     fi
-    # Check cwd
-    if [ -f "./Dockerfile" ] && [ -d "./src" ]; then
+    # Fallback: check cwd (allows running from repo root directly)
+    if [ -f "./Dockerfile" ] && [ -d "./ghostmcp" ]; then
         echo "$(pwd)"
         return
     fi
     echo ""
 }
 
-SRC_DIR=$(resolve_src_dir)
-if [ -z "$SRC_DIR" ]; then
-    echo "[ERROR] Cannot find GhostMCP source directory."
-    echo "        Run from the GhostMCP repo root or set GHOST_SRC=/path/to/GhostMCP"
+REPO_ROOT=$(resolve_repo_root)
+if [ -z "$REPO_ROOT" ]; then
+    echo "[ERROR] Cannot find GhostMCP repo root."
+    echo "        This script expects to live in <repo>/scripts/ with the"
+    echo "        Dockerfile and ghostmcp/ package at the repo root, or set"
+    echo "        GHOST_ROOT=/path/to/GhostMCP"
     exit 1
 fi
 
-echo "[INFO] Working directory: $SRC_DIR"
+# Backward-compat alias: existing command bodies reference SRC_DIR.
+SRC_DIR="$REPO_ROOT"
+
+echo "[INFO] Repo root: $REPO_ROOT"
 
 # --- Helper functions ---
 container_running() {
@@ -428,7 +453,7 @@ cmd_deploy() {
     local ACR_PW
     ACR_PW=$(az acr credential show --name "$GHOST_ACR_NAME" --subscription "$GHOST_SUBSCRIPTION" --query "passwords[0].value" -o tsv)
 
-    local DEPLOY_YAML="./deploy-ghostmcp.yaml"
+    local DEPLOY_YAML="$REPO_ROOT/deploy-ghostmcp.yaml"
     trap "rm -f '$DEPLOY_YAML'" RETURN
 
     cat > "$DEPLOY_YAML" <<EOF
@@ -523,10 +548,13 @@ cmd_teardown() {
 }
 
 # --- Main dispatch ---
-# Strip --podman from args before dispatching
+# Strip runtime flags from args before dispatching
 ARGS=()
 for arg in "$@"; do
-    [ "$arg" != "--podman" ] && ARGS+=("$arg")
+    case "$arg" in
+        --podman|--azure) ;;  # consumed during runtime detection
+        *) ARGS+=("$arg") ;;
+    esac
 done
 set -- "${ARGS[@]:-help}"
 
@@ -568,6 +596,7 @@ case "${1:-help}" in
         echo ""
         echo "Options:"
         echo "  --podman        Force podman runtime (overrides auto-detection)"
+        echo "  --azure         Force Azure ACR build (requires az CLI)"
         echo "  --no-cache      Build without layer cache"
         echo ""
         echo "Build targets:"
@@ -577,16 +606,18 @@ case "${1:-help}" in
         echo ""
         echo "Runtime detection (current: $CONTAINER_RUNTIME):"
         echo "  1. --podman flag → podman (forced)"
-        echo "  2. Windows + az CLI → Azure ACR remote build"
-        echo "  3. docker daemon running → docker (with sudo)"
-        echo "  4. podman available → podman (rootless, no sudo)"
+        echo "  2. --azure flag → Azure ACR remote build (forced)"
+        echo "  3. Windows + az CLI → Azure ACR remote build"
+        echo "  4. docker daemon running → docker (with sudo)"
+        echo "  5. podman available → podman (rootless, no sudo)"
         echo ""
         echo "Examples:"
-        echo "  build-ghostmcp build base            # Build heavy base image"
-        echo "  build-ghostmcp build                  # Rebuild app layer (fast)"
-        echo "  build-ghostmcp build all --no-cache   # Full rebuild, no cache"
-        echo "  build-ghostmcp build --podman         # Force podman for build"
-        echo "  build-ghostmcp run --podman           # Run container with podman"
+        echo "  scripts/build-ghostmcp.sh build base            # Build heavy base image"
+        echo "  scripts/build-ghostmcp.sh build                  # Rebuild app layer (fast)"
+        echo "  scripts/build-ghostmcp.sh build all --no-cache   # Full rebuild, no cache"
+        echo "  scripts/build-ghostmcp.sh build --podman         # Force podman for build"
+        echo "  scripts/build-ghostmcp.sh build --azure          # Force Azure ACR build"
+        echo "  scripts/build-ghostmcp.sh run --podman           # Run container with podman"
         echo ""
         echo "Platform: $PLATFORM | Runtime: $CONTAINER_RUNTIME | az cli: $HAS_AZ"
         echo ""

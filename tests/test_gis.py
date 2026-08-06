@@ -553,7 +553,7 @@ class TestGISLookup:
                 mock_client.return_value = mock_instance
 
                 # Mock geocoding too
-                with patch("src.recon.gis.geocode_address", return_value=(30.2672, -97.7431)):
+                with patch("ghostmcp.recon.gis.geocode_address", return_value=(30.2672, -97.7431)):
                     result = await gis_lookup(address="123 Main St, Austin, TX", provider="auto")
 
         assert result.source == "regrid"
@@ -573,7 +573,7 @@ class TestGISLookup:
                 mock_client.return_value = mock_instance
 
                 # Mock geocoding
-                with patch("src.recon.gis.geocode_address", return_value=(30.2672, -97.7431)):
+                with patch("ghostmcp.recon.gis.geocode_address", return_value=(30.2672, -97.7431)):
                     result = await gis_lookup(
                         address="123 Main St, Austin, TX 78701",
                         state="TX",
@@ -626,7 +626,7 @@ class TestGISLookup:
                 mock_instance.__aexit__ = AsyncMock(return_value=None)
                 mock_client.return_value = mock_instance
 
-                with patch("src.recon.gis.geocode_address", return_value=(30.2672, -97.7431)) as mock_geo:
+                with patch("ghostmcp.recon.gis.geocode_address", return_value=(30.2672, -97.7431)) as mock_geo:
                     result = await gis_lookup(address="123 Main St, Austin, TX", provider="regrid")
                     mock_geo.assert_called_once()
 

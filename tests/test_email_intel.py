@@ -503,9 +503,9 @@ class TestEmailLookup:
 
     @pytest.mark.asyncio
     async def test_sets_domain_and_free_provider(self):
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup("user@gmail.com", include_holehe=True)
 
         assert report.domain == "gmail.com"
@@ -513,9 +513,9 @@ class TestEmailLookup:
 
     @pytest.mark.asyncio
     async def test_corporate_domain_not_free(self):
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup("ceo@acmecorp.com", include_holehe=True)
 
         assert report.is_free_provider is False
@@ -523,10 +523,10 @@ class TestEmailLookup:
     @pytest.mark.asyncio
     async def test_hunter_skipped_for_free_provider(self):
         """Hunter.io should NOT be called for gmail.com even with include_hunter=True."""
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock) as mock_rep, \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock) as mock_hibp, \
-             patch("src.recon.email_intel._query_hunter", new_callable=AsyncMock) as mock_hunter, \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock) as mock_rep, \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock) as mock_hibp, \
+             patch("ghostmcp.recon.email_intel._query_hunter", new_callable=AsyncMock) as mock_hunter, \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup(
                 "user@gmail.com", include_hunter=True, include_holehe=True,
             )
@@ -536,10 +536,10 @@ class TestEmailLookup:
     @pytest.mark.asyncio
     async def test_hunter_called_for_corporate(self):
         """Hunter.io should be called for corporate domains when include_hunter=True."""
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock) as mock_rep, \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock) as mock_hibp, \
-             patch("src.recon.email_intel._query_hunter", new_callable=AsyncMock) as mock_hunter, \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock) as mock_rep, \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock) as mock_hibp, \
+             patch("ghostmcp.recon.email_intel._query_hunter", new_callable=AsyncMock) as mock_hunter, \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup(
                 "ceo@acmecorp.com", include_hunter=True, include_holehe=True,
             )
@@ -548,9 +548,9 @@ class TestEmailLookup:
 
     @pytest.mark.asyncio
     async def test_search_urls_populated(self):
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup("user@example.com", include_holehe=True)
 
         assert "haveibeenpwned" in report.search_urls
@@ -571,9 +571,9 @@ class TestEmailLookup:
 
     @pytest.mark.asyncio
     async def test_email_lowercased(self):
-        with patch("src.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_hibp", new_callable=AsyncMock), \
-             patch("src.recon.email_intel._query_holehe", new_callable=AsyncMock):
+        with patch("ghostmcp.recon.email_intel._query_emailrep", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_hibp", new_callable=AsyncMock), \
+             patch("ghostmcp.recon.email_intel._query_holehe", new_callable=AsyncMock):
             report = await email_lookup("USER@EXAMPLE.COM", include_holehe=True)
 
         assert report.email == "user@example.com"

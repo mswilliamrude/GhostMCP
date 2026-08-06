@@ -1,0 +1,64 @@
+# docker-compose.root.yml — GhostMCP under root podman, behind the host nginx proxy
+#
+# Mirrors the Unimind deployment pattern on this host:
+#   - Server mode (GHOST_MODE=server) exposing SSE/WS, published on 127.0.0.1:18081
+#     (loopback only; only the host nginx reaches it). Avoids 8080 (EJBCA),
+#     18080 (Unimind).
+#   - Syslog -> host.containers.internal: the host rsyslog (UDP 514) routes
+#     ghost-tagged messages to /var/log/ghost/.
+#   - Read-only rootfs + cap_drop ALL + no-new-privileges (hardened).
+#   - playwright/Chromium baked into the image (browser recon features work).
+#
+# Deploy:  podman-compose -f docker-compose.root.yml up -d
+# Logs:    podman-compose -f docker-compose.root.yml logs -f ghostmcp
+#          (persistent: /var/log/ghost/*.log on the host)
+
+version: "3.8"
+
+services:
+  ghostmcp:
+    image: ghostmcp:latest
+    container_name: ghostmcp
+    # Image ENTRYPOINT is ["tini","--"] + a CMD that starts sshd then python3 -m src.
+    # We don't need sshd here (host nginx is the access path), and tini is present
+    # in this image (unlike the imported Unimind image). Override CMD to run the
+    # server directly under tini; add init: true as a belt-and-suspenders reaper.
+    init: true
+    entrypoint: ["tini", "--"]
+    command: ["python3", "-m", "src"]
+    # API keys (Brave, Perplexity) live in .env (gitignored, 600). GhostMCP reads
+    # GHOST_BRAVE_KEY / GHOST_PERPLEXITY_KEY directly via os.environ.
+    env_file:
+      - .env
+    environment:
+      - GHOST_MODE=server
+      - GHOST_PORT=8080
+      - GHOST_PARANOIA=cautious
+      - GHOST_MIN_DELAY=2.0
+      - SYSLOG_SERVER=host.containers.internal
+      # Tag for the host rsyslog router (-> /var/log/ghost/)
+      - GHOST_SYSLOG_TAG=ghostmcp
+      - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+    ports:
+      # Loopback only — host nginx fronts it for remote clients.
+      - "127.0.0.1:18081:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      # Chromium needs a writable /dev/shm-ish scratch; give it tmpfs space.
+      - /app/.cache/tmp
+    volumes:
+      - ghostmcp_ratelimit:/tmp/ghostmcp_ratelimit
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - ghost_net
+
+volumes:
+  ghostmcp_ratelimit:
+
+networks:
+  ghost_net:
+    driver: bridge
