@@ -481,6 +481,39 @@ cmd_deploy() {
     local DEPLOY_YAML="$REPO_ROOT/deploy-ghostmcp.yaml"
     trap "rm -f '$DEPLOY_YAML'" RETURN
 
+    # --- Inject API keys / runtime secrets from the environment ---
+    # These are read from the current environment (populated by the protected
+    # config ~/.protected/ghostmcp.conf, which is sourced at startup). Only
+    # variables that are SET and NON-EMPTY are injected, as secureValue so they
+    # are not echoed back by ACI. Add/rotate a key in ghostmcp.conf and just
+    # re-run `deploy` — no rebuild needed (keys are runtime config, not baked
+    # into the image).
+    local GHOST_SECRET_ENV=""
+    local _v _val
+    for _v in \
+        SERPER_API_KEY VT_API_KEY \
+        GHOST_BRAVE_KEY GHOST_BING_KEY GHOST_PERPLEXITY_KEY GHOST_REGRID_KEY \
+        GHOST_HIBP_KEY GHOST_HUNTER_KEY GHOST_SNUSBASE_KEY GHOST_DEHASHED_KEY \
+        GHOST_DEHASHED_EMAIL GHOST_LEAKCHECK_KEY GHOST_EMAILREP_KEY \
+        GHOST_VERIPHONE_KEY GHOST_COURTLISTENER_TOKEN GHOST_OPENCNAM_TOKEN \
+        GHOST_TWILIO_TOKEN GHOST_CAPTCHA_KEY GHOST_SEARXNG_URL
+    do
+        _val="${!_v:-}"
+        if [ -n "$_val" ]; then
+            # SEARXNG_URL is not a secret — use a plain value; keys use secureValue.
+            if [ "$_v" = "GHOST_SEARXNG_URL" ]; then
+                GHOST_SECRET_ENV+="          - name: ${_v}"$'\n'"            value: \"${_val}\""$'\n'
+            else
+                GHOST_SECRET_ENV+="          - name: ${_v}"$'\n'"            secureValue: \"${_val}\""$'\n'
+            fi
+        fi
+    done
+    if [ -n "$GHOST_SECRET_ENV" ]; then
+        echo "[INFO] Injecting $(printf '%s' "$GHOST_SECRET_ENV" | grep -c '^\s*- name:') runtime secret(s) into the container."
+    else
+        echo "[INFO] No API keys set in the environment; deploying without them (set them in $GHOST_CONF and redeploy)."
+    fi
+
     cat > "$DEPLOY_YAML" <<EOF
 apiVersion: 2021-09-01
 location: ${GHOST_LOCATION}
@@ -509,12 +542,12 @@ properties:
             memoryInGB: 2
         environmentVariables:
           - name: GHOST_PARANOIA
-            value: "cautious"
+            value: "${GHOST_PARANOIA:-cautious}"
           - name: GHOST_MIN_DELAY
-            value: "2.0"
+            value: "${GHOST_MIN_DELAY:-2.0}"
           - name: GHOST_MODE
             value: "server"
-  ipAddress:
+${GHOST_SECRET_ENV}  ipAddress:
     type: Private
     ports:
       - port: 8080
