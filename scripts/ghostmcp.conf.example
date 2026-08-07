@@ -33,6 +33,9 @@ GHOST_LOCATION=centralus
 GHOST_VNET=your-vnet
 GHOST_SUBNET=your-subnet
 GHOST_CONTAINER_GROUP=ghostmcp-app
+# Optional: pin a preferred/static PRIVATE IP inside the subnet. Must be free
+# (not used by another pinned container). Leave unset to let Azure auto-assign.
+# GHOST_STATIC_IP=10.0.10.10
 
 # --- Optional API keys (only what you use) ---
 # SERPER_API_KEY=

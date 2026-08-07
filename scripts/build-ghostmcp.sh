@@ -28,6 +28,7 @@
 #   GHOST_IMAGE         Docker image name (default: ghostmcp:latest)
 #   GHOST_CONTAINER     Container name (default: ghostmcp-dev)
 #   GHOST_SSH_PORT      Local SSH port mapping (default: 2222)
+#   GHOST_STATIC_IP     Optional preferred/static private IP for the ACI group
 #   GHOST_ACR           ACR server (set via GHOST_ACR_NAME env var)
 
 set -euo pipefail
@@ -166,6 +167,10 @@ GHOST_LOCATION="${GHOST_LOCATION:-centralus}"
 GHOST_VNET="${GHOST_VNET:-}"
 GHOST_SUBNET="${GHOST_SUBNET:-}"
 GHOST_CONTAINER_GROUP="${GHOST_CONTAINER_GROUP:-ghostmcp-app}"
+# Optional preferred/static private IP for the ACI container group. Must be a
+# free address inside the delegated subnet (e.g. don't collide with other
+# pinned containers in that subnet). Empty = let Azure auto-assign.
+GHOST_STATIC_IP="${GHOST_STATIC_IP:-}"
 
 # --- Resolve repo root ---
 # This script lives in <repo>/scripts/. The repo root is its parent directory.
@@ -479,7 +484,7 @@ cmd_deploy() {
     ACR_PW=$(az acr credential show --name "$GHOST_ACR_NAME" --subscription "$GHOST_SUBSCRIPTION" --query "passwords[0].value" -o tsv)
 
     local DEPLOY_YAML="$REPO_ROOT/deploy-ghostmcp.yaml"
-    trap "rm -f '$DEPLOY_YAML'" RETURN
+    trap "rm -f '$DEPLOY_YAML' 2>/dev/null || true" RETURN
 
     # --- Inject API keys / runtime secrets from the environment ---
     # These are read from the current environment (populated by the protected
@@ -512,6 +517,14 @@ cmd_deploy() {
         echo "[INFO] Injecting $(printf '%s' "$GHOST_SECRET_ENV" | grep -c '^\s*- name:') runtime secret(s) into the container."
     else
         echo "[INFO] No API keys set in the environment; deploying without them (set them in $GHOST_CONF and redeploy)."
+    fi
+
+    # Optional static private IP. When GHOST_STATIC_IP is set, pin it; otherwise
+    # Azure auto-assigns a free address from the subnet.
+    local GHOST_IP_LINE=""
+    if [ -n "$GHOST_STATIC_IP" ]; then
+        GHOST_IP_LINE="    ip: ${GHOST_STATIC_IP}"$'\n'
+        echo "[INFO] Requesting static private IP: ${GHOST_STATIC_IP}"
     fi
 
     cat > "$DEPLOY_YAML" <<EOF
@@ -549,7 +562,7 @@ properties:
             value: "server"
 ${GHOST_SECRET_ENV}  ipAddress:
     type: Private
-    ports:
+${GHOST_IP_LINE}    ports:
       - port: 8080
         protocol: TCP
       - port: 22
@@ -562,10 +575,20 @@ EOF
         --name "$GHOST_CONTAINER_GROUP" \
         --yes 2>/dev/null || true
 
-    az container create \
+    # On Windows/MSYS2, az.cmd is a native-Windows program and cannot read an
+    # MSYS-style path (/c/Users/...); it needs a Windows path (C:\Users\...).
+    # bash wrote the file fine, but az reported "No such file or directory".
+    # Convert the path with cygpath when available (MSYS2/Cygwin); otherwise
+    # use the path as-is (Linux/macOS).
+    local DEPLOY_YAML_ARG="$DEPLOY_YAML"
+    if [ "$PLATFORM" = "msys2" ] && command -v cygpath >/dev/null 2>&1; then
+        DEPLOY_YAML_ARG="$(cygpath -w "$DEPLOY_YAML")"
+    fi
+
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" az container create \
         --resource-group "$GHOST_RESOURCE_GROUP" \
         --subscription "$GHOST_SUBSCRIPTION" \
-        --file "$DEPLOY_YAML"
+        --file "$DEPLOY_YAML_ARG"
 
     echo "[INFO] Deployed. Waiting for container to start..."
 
