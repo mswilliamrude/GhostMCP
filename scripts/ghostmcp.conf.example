@@ -20,6 +20,12 @@
 # ===================================================================
 
 # --- Azure ACR / ACI deploy (only needed for `deploy` / `--azure`) ---
+# GHOST_SUBSCRIPTION accepts EITHER the subscription name OR its UUID —
+# `az --subscription` takes both. Set ONE (the later line wins if both are
+# uncommented). The name is friendlier; the UUID is unambiguous. Documented
+# here as alternatives. NOTE: this file is sourced by the shell, so quote a
+# name that contains spaces:
+#   GHOST_SUBSCRIPTION="My Subscription Name"
 GHOST_SUBSCRIPTION=00000000-0000-0000-0000-000000000000
 GHOST_RESOURCE_GROUP=your-resource-group
 GHOST_ACR_NAME=youracr
