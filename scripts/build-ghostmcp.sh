@@ -23,6 +23,7 @@
 # lives at the repo root.
 #
 # Environment:
+#   GHOST_CONF          Protected config file to source (default: ~/.protected/ghostmcp.conf)
 #   GHOST_ROOT          Repo root override (default: parent of scripts/)
 #   GHOST_IMAGE         Docker image name (default: ghostmcp:latest)
 #   GHOST_CONTAINER     Container name (default: ghostmcp-dev)
@@ -30,6 +31,30 @@
 #   GHOST_ACR           ACR server (set via GHOST_ACR_NAME env var)
 
 set -euo pipefail
+
+# --- Protected config (secrets never committed to the repo) ---
+# Load deploy/ACR/ACI values from an out-of-tree protected file so that
+# subscription IDs, ACR names, VNet/subnet, etc. stay OFF the public repo.
+# Override the path with GHOST_CONF; default is ~/.protected/ghostmcp.conf.
+# The file is plain shell (KEY=value / export KEY=value) and is sourced into
+# the environment the rest of this script already reads. Assignments in the
+# file take effect as written; to force a one-off override, edit the file or
+# pass the value inline (e.g. `GHOST_LOCATION=eastus scripts/build-ghostmcp.sh ...`
+# on a line the file doesn't set).
+GHOST_CONF="${GHOST_CONF:-$HOME/.protected/ghostmcp.conf}"
+if [ -f "$GHOST_CONF" ]; then
+    # Warn (don't fail) on loose perms — this file holds secrets.
+    perms="$(stat -c '%a' "$GHOST_CONF" 2>/dev/null || stat -f '%A' "$GHOST_CONF" 2>/dev/null || echo '')"
+    case "$perms" in
+        600|400|"") : ;;
+        *) echo "[WARN] $GHOST_CONF is $perms; recommend chmod 600 (contains secrets)" >&2 ;;
+    esac
+    set -a            # export everything defined while sourcing
+    # shellcheck disable=SC1090
+    . "$GHOST_CONF"
+    set +a
+    echo "[INFO] Loaded protected config: $GHOST_CONF"
+fi
 
 # --- Platform detection ---
 detect_platform() {
