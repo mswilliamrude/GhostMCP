@@ -258,6 +258,31 @@ Azure deploys have **no built-in defaults** for subscription, resource group,
 VNet, or subnet — they must be set explicitly. Podman/Docker builds need none of
 these.
 
+### 9. Protected config (keep secrets out of the repo)
+
+This is a **public repository** — never commit real subscription IDs, ACR
+names, VNet/subnet, or API keys. Instead, keep them in an out-of-tree protected
+file that `build-ghostmcp.sh` **auto-sources** if present:
+
+```bash
+mkdir -p ~/.protected
+cp scripts/ghostmcp.conf.example ~/.protected/ghostmcp.conf
+chmod 600 ~/.protected/ghostmcp.conf
+# edit ~/.protected/ghostmcp.conf with your real values
+```
+
+- Default path: `~/.protected/ghostmcp.conf` (override with `GHOST_CONF=/path`).
+- Format: plain shell — `KEY=value`, one per line (see
+  `scripts/ghostmcp.conf.example`).
+- `build-ghostmcp.sh` sources it automatically before resolving any Azure/ACR/
+  ACI config, so `deploy`, `--azure`, etc. just work with your real values.
+- For raw `docker`/`az` commands, load it into your shell first:
+  ```bash
+  set -a; . ~/.protected/ghostmcp.conf; set +a
+  ```
+- `.gitignore` blocks `ghostmcp.conf` / `*.conf` (only `*.conf.example` is
+  tracked), so a real config can't be committed by accident.
+
 ---
 
 ## MCP client configuration

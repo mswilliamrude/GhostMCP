@@ -95,6 +95,12 @@ Serper → Brave → Bing → SearXNG → Google → DDG Lite
 
 ## Configuration
 
+> **Public repo — keep secrets out of git.** Store real key values in the
+> out-of-tree protected file `~/.protected/ghostmcp.conf` (copied from
+> `scripts/ghostmcp.conf.example`), not in tracked files. `build-ghostmcp.sh`
+> auto-sources it; for other tooling, `set -a; . ~/.protected/ghostmcp.conf; set +a`.
+> The examples below use placeholders — never commit real values.
+
 ### Environment Variables (opencode.json)
 
 ```json

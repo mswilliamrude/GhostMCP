@@ -11,6 +11,12 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# Protected deploy/secret config (real values live OUTSIDE the repo in
+# ~/.protected/). Never commit a real ghostmcp.conf; the *.example is fine.
+ghostmcp.conf
+*.conf
+!*.conf.example
+
 # Session files (may contain API keys)
 session-*.md
 

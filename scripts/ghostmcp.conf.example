@@ -1,0 +1,42 @@
+# GhostMCP protected config — EXAMPLE
+# ===================================================================
+# Copy this to  ~/.protected/ghostmcp.conf  and fill in real values.
+# That path is OUTSIDE the repo on purpose: deploy secrets (Azure
+# subscription, ACR, VNet, API keys) must never be committed to a
+# public repository.
+#
+#   mkdir -p ~/.protected
+#   cp scripts/ghostmcp.conf.example ~/.protected/ghostmcp.conf
+#   chmod 600 ~/.protected/ghostmcp.conf
+#   # edit ~/.protected/ghostmcp.conf with your real values
+#
+# build-ghostmcp.sh auto-sources ~/.protected/ghostmcp.conf if it exists
+# (override the path with GHOST_CONF=/some/other/file). You can also load
+# it into your shell for docker/az commands:
+#
+#   set -a; . ~/.protected/ghostmcp.conf; set +a
+#
+# This file is plain shell: KEY=value, one per line. No spaces around '='.
+# ===================================================================
+
+# --- Azure ACR / ACI deploy (only needed for `deploy` / `--azure`) ---
+GHOST_SUBSCRIPTION=00000000-0000-0000-0000-000000000000
+GHOST_RESOURCE_GROUP=your-resource-group
+GHOST_ACR_NAME=youracr
+GHOST_LOCATION=centralus
+GHOST_VNET=your-vnet
+GHOST_SUBNET=your-subnet
+GHOST_CONTAINER_GROUP=ghostmcp-app
+
+# --- Optional API keys (only what you use) ---
+# SERPER_API_KEY=
+# BRAVE_API_KEY=
+# VT_API_KEY=
+# GHOST_HIBP_KEY=
+# GHOST_PERPLEXITY_KEY=
+# GHOST_REGRID_KEY=
+
+# --- Optional runtime overrides ---
+# GHOST_SSH_PORT=2222
+# GHOST_PARANOIA=cautious
+# GHOST_MIN_DELAY=2.0
