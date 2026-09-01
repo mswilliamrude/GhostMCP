@@ -234,7 +234,7 @@ from .recon.subdomains import enumerate_subdomains, dns_brute_force, SubdomainRe
 from .recon.vulns import lookup_cve, search_cves, check_package, CVEResult, PackageVulnResult
 from .recon.threats import threat_lookup, ThreatReport
 from .recon.phone import PhoneReport, phone_lookup
-from .recon.vehicles import VehicleReport, vehicle_lookup
+from .recon.vehicles import VehicleReport, vehicle_lookup, vehicle_history, DataLayer, AuctionRecord, SafetyRating, MarketValue, TitleRecord
 from .recon.people import PeopleSearchResult, people_search
 from .recon.email_intel import EmailReport, email_lookup
 from .recon.username import UsernameReport, username_lookup
@@ -2073,6 +2073,258 @@ async def ghost_vin(vin: str) -> str:
         return "Error: vin is required."
     report = await vehicle_lookup(vin)
     return _format_vehicle_report(report)
+
+
+def _format_vehicle_history_report(r: VehicleReport) -> str:
+    """Format a full vehicle history report for display."""
+    if r.error:
+        return f"Vehicle history error: {r.error}"
+
+    lines = [f"{'=' * 60}", f"  VEHICLE HISTORY REPORT: {r.vin}", f"{'=' * 60}", ""]
+
+    # ── Basic specs ──
+    lines.append(f"Make:          {r.make}")
+    lines.append(f"Model:         {r.model}")
+    lines.append(f"Year:          {r.year}")
+    if r.trim:
+        lines.append(f"Trim:          {r.trim}")
+    if r.body_type:
+        lines.append(f"Body Type:     {r.body_type}")
+    if r.drive_type:
+        lines.append(f"Drive Type:    {r.drive_type}")
+    if r.transmission:
+        lines.append(f"Transmission:  {r.transmission}")
+    if r.engine:
+        eng = r.engine
+        parts = []
+        if eng.get("displacement"):
+            parts.append(f"{eng['displacement']}L")
+        if eng.get("cylinders"):
+            parts.append(f"{eng['cylinders']}cyl")
+        if eng.get("fuel_type"):
+            parts.append(eng["fuel_type"])
+        if parts:
+            lines.append(f"Engine:        {' / '.join(parts)}")
+    if r.manufacturer:
+        lines.append(f"Manufacturer:  {r.manufacturer.get('name', 'N/A')} ({r.manufacturer.get('country', '?')})")
+
+    # ── Safety ratings ──
+    if r.safety_rating:
+        sr = r.safety_rating
+        lines.append(f"\n{'─' * 40}")
+        lines.append("NHTSA SAFETY RATINGS (out of 5 stars)")
+        lines.append(f"{'─' * 40}")
+        lines.append(f"  Overall:            {sr.overall}")
+        lines.append(f"  Frontal (driver):   {sr.frontal_driver}")
+        lines.append(f"  Frontal (pass):     {sr.frontal_passenger}")
+        lines.append(f"  Side (driver):      {sr.side_driver}")
+        lines.append(f"  Side (pass):        {sr.side_passenger}")
+        lines.append(f"  Side pole:          {sr.side_pole}")
+        lines.append(f"  Rollover:           {sr.rollover}")
+
+    # ── Title brands / flags ──
+    lines.append(f"\n{'─' * 40}")
+    lines.append("TITLE & OWNERSHIP")
+    lines.append(f"{'─' * 40}")
+    if r.owner_count is not None:
+        lines.append(f"  Number of owners:   {r.owner_count}")
+    if r.title_brands:
+        lines.append(f"  Title brands:       {', '.join(r.title_brands)}")
+    else:
+        lines.append("  Title brands:       None (clean)")
+    if r.odometer_rollback is True:
+        lines.append("  ⚠ ODOMETER ROLLBACK DETECTED")
+    elif r.odometer_rollback is False:
+        lines.append("  Odometer:           No rollback detected")
+
+    # Title records
+    if r.title_records:
+        lines.append(f"\n  Title History ({len(r.title_records)} records):")
+        for t in r.title_records:
+            lines.append(f"    {t.date:12s}  {t.state:6s}  {t.title_type:12s}  odo: {t.odometer}")
+
+    # ── NICB flags ──
+    if r.nicb_theft_flag is not None or r.nicb_salvage_flag is not None:
+        lines.append(f"\n{'─' * 40}")
+        lines.append("NICB VINCHECK")
+        lines.append(f"{'─' * 40}")
+        if r.nicb_theft_flag is True:
+            lines.append("  ⚠ REPORTED STOLEN")
+        elif r.nicb_theft_flag is False:
+            lines.append("  Theft:    Not reported")
+        if r.nicb_salvage_flag is True:
+            lines.append("  ⚠ SALVAGE / TOTAL LOSS REPORTED")
+        elif r.nicb_salvage_flag is False:
+            lines.append("  Salvage:  Not reported")
+    elif r.nicb_error:
+        lines.append(f"\n  NICB: {r.nicb_error}")
+
+    # ── Accident / salvage / theft records (VinAudit) ──
+    if r.accident_records:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"ACCIDENT RECORDS ({len(r.accident_records)})")
+        lines.append(f"{'─' * 40}")
+        for acc in r.accident_records[:10]:
+            lines.append(f"  Date: {acc.get('date', 'N/A')}  Severity: {acc.get('severity', 'N/A')}")
+            if acc.get("description"):
+                lines.append(f"    {acc['description'][:200]}")
+
+    if r.salvage_records:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"SALVAGE / JUNK RECORDS ({len(r.salvage_records)})")
+        lines.append(f"{'─' * 40}")
+        for sv in r.salvage_records[:10]:
+            lines.append(f"  {sv.get('date', 'N/A')}  {sv.get('type', '')}  {sv.get('entity', '')}")
+
+    if r.theft_records:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"THEFT RECORDS ({len(r.theft_records)})")
+        lines.append(f"{'─' * 40}")
+        for th in r.theft_records[:5]:
+            lines.append(f"  {th.get('date', 'N/A')}  {th.get('state', '')}  {th.get('status', '')}")
+
+    # ── Auction records (Copart/IAAI) ──
+    if r.auction_records:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"SALVAGE AUCTION RECORDS ({len(r.auction_records)})")
+        lines.append(f"{'─' * 40}")
+        for ar in r.auction_records:
+            lines.append(f"  Source:     {ar.source}  (Lot #{ar.lot_number})")
+            lines.append(f"  Damage:    {ar.damage_primary}")
+            if ar.damage_secondary:
+                lines.append(f"  Secondary: {ar.damage_secondary}")
+            lines.append(f"  Loss Type: {ar.loss_type}")
+            if ar.sale_price:
+                lines.append(f"  Sale Price: ${ar.sale_price}")
+            if ar.odometer:
+                lines.append(f"  Odometer:  {ar.odometer}")
+            if ar.keys_present:
+                lines.append(f"  Keys:      {ar.keys_present}")
+            if ar.listing_url:
+                lines.append(f"  URL:       {ar.listing_url}")
+            if ar.image_urls:
+                lines.append(f"  Photos:    {len(ar.image_urls)} available")
+                for img in ar.image_urls[:3]:
+                    lines.append(f"    {img}")
+            lines.append("")
+
+    # ── Market value ──
+    if r.market_value:
+        mv = r.market_value
+        lines.append(f"\n{'─' * 40}")
+        lines.append("MARKET VALUE ESTIMATE")
+        lines.append(f"{'─' * 40}")
+        lines.append(f"  Retail:        ${mv.retail}")
+        lines.append(f"  Trade-in:      ${mv.trade_in}")
+        lines.append(f"  Private Party: ${mv.private_party}")
+        lines.append(f"  Source:        {mv.source}")
+
+    # ── Recalls ──
+    if r.recalls:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"RECALLS ({len(r.recalls)})")
+        lines.append(f"{'─' * 40}")
+        for rc in r.recalls[:8]:
+            lines.append(f"  Campaign: {rc.get('campaign_number', 'N/A')}")
+            lines.append(f"    Component: {rc.get('component', 'N/A')}")
+            lines.append(f"    Summary:   {rc.get('summary', 'N/A')[:150]}")
+            lines.append(f"    Remedy:    {rc.get('remedy', 'N/A')[:150]}")
+            lines.append("")
+        if len(r.recalls) > 8:
+            lines.append(f"  ... and {len(r.recalls) - 8} more recalls")
+    else:
+        lines.append("\nRecalls: None found")
+
+    # ── Complaints ──
+    if r.complaint_count:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"CONSUMER COMPLAINTS ({r.complaint_count})")
+        lines.append(f"{'─' * 40}")
+        crash_complaints = [c for c in r.complaints if c.get("crash")]
+        fire_complaints = [c for c in r.complaints if c.get("fire")]
+        if crash_complaints:
+            lines.append(f"  ⚠ {len(crash_complaints)} complaint(s) involve CRASHES")
+        if fire_complaints:
+            lines.append(f"  ⚠ {len(fire_complaints)} complaint(s) involve FIRES")
+        for c in r.complaints[:5]:
+            lines.append(f"  [{c.get('date', 'N/A')}] {c.get('component', 'N/A')}")
+            lines.append(f"    {c.get('summary', 'N/A')[:200]}")
+            lines.append("")
+        if len(r.complaints) > 5:
+            lines.append(f"  ... and {r.complaint_count - 5} more complaints")
+
+    # ── Lien / ownership (CarsXE) ──
+    if r.lien_records:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"LIEN RECORDS ({len(r.lien_records)})")
+        lines.append(f"{'─' * 40}")
+        for lien in r.lien_records[:5]:
+            lines.append(f"  {lien}")
+
+    if r.ownership_history:
+        lines.append(f"\n{'─' * 40}")
+        lines.append(f"OWNERSHIP HISTORY ({len(r.ownership_history)})")
+        lines.append(f"{'─' * 40}")
+        for own in r.ownership_history[:10]:
+            lines.append(f"  {own}")
+
+    # ── Search URLs ──
+    if r.search_urls:
+        lines.append(f"\n{'─' * 40}")
+        lines.append("INVESTIGATION URLS")
+        lines.append(f"{'─' * 40}")
+        for category, urls in r.search_urls.items():
+            lines.append(f"  {category}:")
+            for entry in urls:
+                lines.append(f"    {entry.get('name', '?')}: {entry.get('url', '?')}")
+            lines.append("")
+
+    # ── Layers used + errors ──
+    lines.append(f"\n{'─' * 40}")
+    lines.append(f"Data sources: {', '.join(r.layers_used)}")
+    if r.errors:
+        lines.append(f"Warnings: {'; '.join(r.errors)}")
+    lines.append(f"{'=' * 60}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="ghost_vehicle_history",
+    description=(
+        "Full vehicle history report from a VIN. Multi-layer lookup: free NHTSA "
+        "(specs, recalls, complaints, safety ratings) + NICB stolen/salvage check + "
+        "Copart/IAAI salvage auction records. Optionally adds VinAudit NMVTIS "
+        "(title history, owners, odometer, accidents — $1/query, needs "
+        "GHOST_VINAUDIT_API_KEY) and CarsXE (market value, liens — needs "
+        "GHOST_CARSXE_API_KEY). Set layer to 'free' (default), 'nmvtis', or 'full'."
+    ),
+    parameters={
+        "vin": {"type": "string", "description": "Vehicle Identification Number (17 characters)."},
+        "layer": {
+            "type": "string",
+            "description": (
+                "Data depth: 'free' (NHTSA+NICB+auctions, no cost), "
+                "'nmvtis' (adds VinAudit title/owner/salvage, ~$1), "
+                "'full' (adds CarsXE market value/liens). Default: 'free'."
+            ),
+            "default": "free",
+        },
+    },
+)
+async def ghost_vehicle_history(vin: str, layer: str = "free") -> str:
+    if not vin:
+        return "Error: vin is required."
+
+    layer_map = {
+        "free": DataLayer.FREE_ONLY,
+        "nmvtis": DataLayer.NMVTIS,
+        "full": DataLayer.FULL,
+    }
+    data_layer = layer_map.get(layer.lower(), DataLayer.FREE_ONLY)
+
+    report = await vehicle_history(vin, layer=data_layer)
+    return _format_vehicle_history_report(report)
 
 
 def _format_people_report(r: PeopleSearchResult) -> str:
