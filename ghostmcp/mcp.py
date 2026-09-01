@@ -3761,6 +3761,241 @@ async def _health_handler(request):
     return JSONResponse(body)
 
 
+def build_server_app():
+    """Build the Starlette app exposing GhostMCP over HTTP transports.
+
+    Routes:
+      - GET  /health, /healthz   liveness JSON
+      - GET  /sse                SSE transport: assigns session_id, then the
+                                 client POSTs JSON-RPC to /mcp?session_id=...
+      - POST /mcp                receive JSON-RPC; reply is pushed down the SSE
+                                 stream for that session (returns 202)
+      - WS   /ws                 bidirectional JSON-RPC (echoes 'mcp' subprotocol)
+      - WS   /bridge             local connectivity bridge registration
+
+    Extracted from main() so both the server and the test-suite exercise the
+    exact same handlers.
+    """
+    import uuid
+    from starlette.applications import Starlette
+    from starlette.routing import Route, WebSocketRoute
+    from starlette.responses import JSONResponse, StreamingResponse
+    from starlette.websockets import WebSocket, WebSocketDisconnect
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
+    # --- SSE Transport (for opencode "type": "remote" with /sse URL) ---
+    _sse_clients: dict[str, asyncio.Queue] = {}
+
+    async def sse_endpoint(request):
+        """SSE endpoint — client connects here, gets a session_id, then POSTs to /mcp."""
+        session_id = str(uuid.uuid4())
+        queue: asyncio.Queue = asyncio.Queue()
+        _sse_clients[session_id] = queue
+
+        async def event_stream():
+            # First event: tell client where to POST messages
+            yield f"event: endpoint\ndata: /mcp?session_id={session_id}\n\n"
+            try:
+                while True:
+                    # Wait for the next outbound message, but wake up
+                    # periodically to emit an SSE comment as keep-alive so
+                    # idle proxies / ACI do not sever the stream.
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield ": keep-alive\n\n"
+                        continue
+                    yield f"event: message\ndata: {data}\n\n"
+            except asyncio.CancelledError:
+                pass
+            finally:
+                _sse_clients.pop(session_id, None)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    async def mcp_post_endpoint(request):
+        """Receive MCP JSON-RPC messages via POST, return response via SSE stream."""
+        session_id = request.query_params.get("session_id")
+        if not session_id or session_id not in _sse_clients:
+            return JSONResponse({"error": "Invalid or missing session_id"}, status_code=400)
+
+        body = await request.body()
+        raw = body.decode("utf-8")
+
+        try:
+            message = json.loads(raw)
+        except json.JSONDecodeError:
+            error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            await _sse_clients[session_id].put(error_resp)
+            return JSONResponse({"status": "error"}, status_code=200)
+
+        response = await mcp.handle_request(message)
+        if response:
+            await _sse_clients[session_id].put(json.dumps(response))
+
+        return JSONResponse({"status": "ok"}, status_code=202)
+
+    # --- WebSocket Transport ---
+    async def ws_endpoint(websocket: WebSocket):
+        """WebSocket endpoint — bidirectional JSON-RPC.
+
+        Echoes the 'mcp' subprotocol back to the client when offered, so
+        clients that send `Sec-WebSocket-Protocol: mcp` complete the
+        handshake instead of aborting on an empty server response.
+        """
+        # Honor the MCP subprotocol if the client offered it.
+        offered = websocket.scope.get("subprotocols", []) or []
+        chosen = "mcp" if "mcp" in offered else None
+        await websocket.accept(subprotocol=chosen)
+
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    message = json.loads(raw)
+                except json.JSONDecodeError:
+                    error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+                    await websocket.send_text(error_resp)
+                    continue
+
+                response = await mcp.handle_request(message)
+                if response:
+                    await websocket.send_text(json.dumps(response))
+        except WebSocketDisconnect:
+            # Normal client hangup — not an error.
+            return
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"[GhostMCP] /ws error: {exc!r}")
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    # --- Local Connectivity Bridge ---
+    async def bridge_endpoint(websocket: WebSocket):
+        """Bridge WebSocket — dev machines connect here to register local ports."""
+        await websocket.accept()
+        client_id = None
+
+        try:
+            # Wait for registration message
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            msg = json.loads(raw)
+
+            if msg.get("type") != "register":
+                await websocket.send_text(json.dumps({"type": "error", "error": "Expected register message"}))
+                return
+
+            client_id = msg.get("client_id", f"bridge-{id(websocket)}")
+            ports = msg.get("ports", [])
+            web_access = msg.get("allow_web_access", False)
+            web_mode = msg.get("web_access_mode", "false")
+            locality = msg.get("locality", {})
+
+            # Auto-detect locality from client's source IP if not provided
+            if not locality:
+                try:
+                    client_host = websocket.client.host if websocket.client else None
+                    if client_host:
+                        locality = await _detect_locality(client_host)
+                except Exception:
+                    pass
+
+            # Register this bridge client
+            _register_bridge(client_id, {
+                "ws": websocket,
+                "ports": ports,
+                "web_access": web_access,
+                "web_mode": web_mode,
+                "locality": locality,
+            })
+
+            locality_str = f", locality={locality.get('region', '?')}" if locality else ""
+            web_str = f", web={web_mode}" if web_access else ""
+            print(f"[GhostMCP] Bridge connected: {client_id} ports={ports}{web_str}{locality_str}")
+
+            # Acknowledge
+            await websocket.send_text(json.dumps({
+                "type": "registered",
+                "client_id": client_id,
+                "ports": ports,
+            }))
+
+            # Handle responses and re-registrations from the bridge
+            while True:
+                raw = await websocket.receive_text()
+                msg = json.loads(raw)
+                msg_type = msg.get("type", "")
+
+                if msg_type in ("response", "error"):
+                    req_id = msg.get("id")
+                    if req_id and req_id in _bridge_pending:
+                        future = _bridge_pending.pop(req_id)
+                        if not future.done():
+                            future.set_result(msg)
+                elif msg_type == "register":
+                    # Re-registration (config file changed)
+                    ports = msg.get("ports", [])
+                    web_access = msg.get("allow_web_access", False)
+                    web_mode = msg.get("web_access_mode", "false")
+                    locality = msg.get("locality", {})
+                    _register_bridge(client_id, {
+                        "ws": websocket,
+                        "ports": ports,
+                        "web_access": web_access,
+                        "web_mode": web_mode,
+                        "locality": locality,
+                    })
+                    print(f"[GhostMCP] Bridge re-registered: {client_id} ports={ports}")
+                    await websocket.send_text(json.dumps({
+                        "type": "registered",
+                        "client_id": client_id,
+                        "ports": ports,
+                    }))
+                elif msg_type == "heartbeat":
+                    await websocket.send_text(json.dumps({"type": "heartbeat_ack"}))
+
+        except Exception as e:
+            print(f"[GhostMCP] Bridge disconnected: {client_id or 'unknown'} ({e})")
+        finally:
+            if client_id:
+                _unregister_bridge(client_id)
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    # SSE/remote MCP clients (and browsers) may issue cross-origin
+    # requests; allow them so the transport handshake isn't blocked.
+    middleware = [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["*"],
+        )
+    ]
+
+    return Starlette(
+        middleware=middleware,
+        routes=[
+            Route("/health", _health_handler, methods=["GET"]),
+            Route("/healthz", _health_handler, methods=["GET"]),
+            Route("/sse", sse_endpoint, methods=["GET"]),
+            Route("/mcp", mcp_post_endpoint, methods=["POST"]),
+            WebSocketRoute("/ws", ws_endpoint),
+            WebSocketRoute("/bridge", bridge_endpoint),
+        ],
+    )
+
+
 def main() -> None:
     """Run GhostMCP as an MCP server (stdio) or HTTP/WS server."""
     mode = os.environ.get("GHOST_MODE", "stdio")
@@ -3768,191 +4003,12 @@ def main() -> None:
     if mode == "server":
         # HTTP server mode — SSE + WebSocket + health endpoint
         import uvicorn
-        from starlette.applications import Starlette
-        from starlette.routing import Route, WebSocketRoute
-        from starlette.responses import JSONResponse
-        from starlette.websockets import WebSocket
 
-        # --- SSE Transport (for opencode "type": "remote" with /sse URL) ---
-        _sse_clients: dict[str, asyncio.Queue] = {}
-
-        async def sse_endpoint(request):
-            """SSE endpoint — client connects here, gets a session_id, then POSTs to /mcp."""
-            from starlette.responses import StreamingResponse
-            import uuid
-
-            session_id = str(uuid.uuid4())
-            queue: asyncio.Queue = asyncio.Queue()
-            _sse_clients[session_id] = queue
-
-            async def event_stream():
-                # First event: tell client where to POST messages
-                yield f"event: endpoint\ndata: /mcp?session_id={session_id}\n\n"
-                try:
-                    while True:
-                        data = await queue.get()
-                        yield f"event: message\ndata: {data}\n\n"
-                except asyncio.CancelledError:
-                    pass
-                finally:
-                    _sse_clients.pop(session_id, None)
-
-            return StreamingResponse(event_stream(), media_type="text/event-stream",
-                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-        async def mcp_post_endpoint(request):
-            """Receive MCP JSON-RPC messages via POST, return response via SSE stream."""
-            session_id = request.query_params.get("session_id")
-            if not session_id or session_id not in _sse_clients:
-                return JSONResponse({"error": "Invalid or missing session_id"}, status_code=400)
-
-            body = await request.body()
-            raw = body.decode("utf-8")
-
-            try:
-                message = json.loads(raw)
-            except json.JSONDecodeError:
-                error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-                await _sse_clients[session_id].put(error_resp)
-                return JSONResponse({"status": "error"}, status_code=200)
-
-            response = await mcp.handle_request(message)
-            if response:
-                await _sse_clients[session_id].put(json.dumps(response))
-
-            return JSONResponse({"status": "ok"}, status_code= 202)
-
-        # --- WebSocket Transport ---
-        async def ws_endpoint(websocket: WebSocket):
-            """WebSocket endpoint — bidirectional JSON-RPC."""
-            await websocket.accept()
-            try:
-                while True:
-                    raw = await websocket.receive_text()
-                    try:
-                        message = json.loads(raw)
-                    except json.JSONDecodeError:
-                        error_resp = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-                        await websocket.send_text(error_resp)
-                        continue
-
-                    response = await mcp.handle_request(message)
-                    if response:
-                        await websocket.send_text(json.dumps(response))
-            except Exception:
-                pass
-            finally:
-                try:
-                    await websocket.close()
-                except Exception:
-                    pass
-
-        # --- Local Connectivity Bridge ---
-        async def bridge_endpoint(websocket: WebSocket):
-            """Bridge WebSocket — dev machines connect here to register local ports."""
-            await websocket.accept()
-            client_id = None
-            
-            try:
-                # Wait for registration message
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
-                msg = json.loads(raw)
-                
-                if msg.get("type") != "register":
-                    await websocket.send_text(json.dumps({"type": "error", "error": "Expected register message"}))
-                    return
-                
-                client_id = msg.get("client_id", f"bridge-{id(websocket)}")
-                ports = msg.get("ports", [])
-                web_access = msg.get("allow_web_access", False)
-                web_mode = msg.get("web_access_mode", "false")
-                locality = msg.get("locality", {})
-                
-                # Auto-detect locality from client's source IP if not provided
-                if not locality:
-                    try:
-                        client_host = websocket.client.host if websocket.client else None
-                        if client_host:
-                            locality = await _detect_locality(client_host)
-                    except Exception:
-                        pass
-                
-                # Register this bridge client
-                _register_bridge(client_id, {
-                    "ws": websocket,
-                    "ports": ports,
-                    "web_access": web_access,
-                    "web_mode": web_mode,
-                    "locality": locality,
-                })
-                
-                locality_str = f", locality={locality.get('region', '?')}" if locality else ""
-                web_str = f", web={web_mode}" if web_access else ""
-                print(f"[GhostMCP] Bridge connected: {client_id} ports={ports}{web_str}{locality_str}")
-                
-                # Acknowledge
-                await websocket.send_text(json.dumps({
-                    "type": "registered",
-                    "client_id": client_id,
-                    "ports": ports,
-                }))
-                
-                # Handle responses and re-registrations from the bridge
-                while True:
-                    raw = await websocket.receive_text()
-                    msg = json.loads(raw)
-                    msg_type = msg.get("type", "")
-                    
-                    if msg_type in ("response", "error"):
-                        req_id = msg.get("id")
-                        if req_id and req_id in _bridge_pending:
-                            future = _bridge_pending.pop(req_id)
-                            if not future.done():
-                                future.set_result(msg)
-                    elif msg_type == "register":
-                        # Re-registration (config file changed)
-                        ports = msg.get("ports", [])
-                        web_access = msg.get("allow_web_access", False)
-                        web_mode = msg.get("web_access_mode", "false")
-                        locality = msg.get("locality", {})
-                        _register_bridge(client_id, {
-                            "ws": websocket,
-                            "ports": ports,
-                            "web_access": web_access,
-                            "web_mode": web_mode,
-                            "locality": locality,
-                        })
-                        print(f"[GhostMCP] Bridge re-registered: {client_id} ports={ports}")
-                        await websocket.send_text(json.dumps({
-                            "type": "registered",
-                            "client_id": client_id,
-                            "ports": ports,
-                        }))
-                    elif msg_type == "heartbeat":
-                        await websocket.send_text(json.dumps({"type": "heartbeat_ack"}))
-                        
-            except Exception as e:
-                print(f"[GhostMCP] Bridge disconnected: {client_id or 'unknown'} ({e})")
-            finally:
-                if client_id:
-                    _unregister_bridge(client_id)
-                try:
-                    await websocket.close()
-                except Exception:
-                    pass
-
-        # --- App with all routes ---
-        app = Starlette(routes=[
-            Route("/health", _health_handler, methods=["GET"]),
-            Route("/sse", sse_endpoint, methods=["GET"]),
-            Route("/mcp", mcp_post_endpoint, methods=["POST"]),
-            WebSocketRoute("/ws", ws_endpoint),
-            WebSocketRoute("/bridge", bridge_endpoint),
-        ])
+        app = build_server_app()
 
         port = int(os.environ.get("GHOST_PORT", "8080"))
         print(f"[GhostMCP] Starting server on port {port}")
-        print(f"[GhostMCP]   Health:    http://0.0.0.0:{port}/health")
+        print(f"[GhostMCP]   Health:    http://0.0.0.0:{port}/health  (alias: /healthz)")
         print(f"[GhostMCP]   SSE:       http://0.0.0.0:{port}/sse")
         print(f"[GhostMCP]   WebSocket: ws://0.0.0.0:{port}/ws")
         print(f"[GhostMCP]   Bridge:    ws://0.0.0.0:{port}/bridge")
