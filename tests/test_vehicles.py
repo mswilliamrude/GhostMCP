@@ -269,12 +269,12 @@ class TestSearchUrlGeneration:
         assert "vehicle_history" in urls
         assert len(urls["vehicle_history"]) >= 3
 
-    def test_generates_nhtsa_category(self):
+    def test_generates_government_category(self):
         report = VehicleReport(vin="1HGCG5655WA014428", make="HONDA",
                                model="Accord", year="2003")
         urls = _generate_search_urls(report)
-        assert "nhtsa" in urls
-        assert len(urls["nhtsa"]) >= 2
+        assert "government" in urls
+        assert len(urls["government"]) >= 2
 
     def test_vin_in_urls(self):
         report = VehicleReport(vin="1HGCG5655WA014428", make="HONDA",
@@ -384,7 +384,7 @@ class TestVehicleLookup:
             report = await vehicle_lookup("1HGCG5655WA014428")
 
         assert report.error is not None
-        assert "failed" in report.error.lower()
+        assert "decode" in report.error.lower()
 
     @pytest.mark.asyncio
     async def test_decode_http_error(self):
