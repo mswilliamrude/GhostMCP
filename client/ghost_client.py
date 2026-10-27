@@ -43,6 +43,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 try:
     import httpx
@@ -70,6 +71,17 @@ logging.basicConfig(
 log = logging.getLogger("ghost_client")
 
 
+def _safe_log_url(url: str) -> str:
+    """Keep credentials, paths and signed query parameters out of bridge logs."""
+    try:
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname or parts.username:
+            return "[redacted]"
+        return f"{parts.scheme}://{parts.hostname}:{parts.port}" if parts.port else f"{parts.scheme}://{parts.hostname}"
+    except (ValueError, UnicodeError):
+        return "[redacted]"
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -83,6 +95,7 @@ class BridgeConfig:
         self.ports: list[int] = []
         self.allow_web_access: bool = False
         self.web_access_mode: str = "false"  # false | self_only | shared
+        self.allow_asset_inspection: bool = False
         self.locality: dict = {}
         self._config_path: Optional[str] = None
         self._last_mtime: float = 0
@@ -125,18 +138,21 @@ class BridgeConfig:
         old_ports = self.ports[:]
         old_web = self.allow_web_access
         old_mode = self.web_access_mode
+        old_inspection = self.allow_asset_inspection
 
         self.server_url = data.get("server", self.server_url)
         self.client_id = data.get("client_id", self.client_id or f"bridge-{int(time.time())}")
         self.ports = [int(p) for p in data.get("ports", [])]
         self.allow_web_access = bool(data.get("allow_web_access", False))
         self.web_access_mode = str(data.get("web_access_mode", "false"))
+        self.allow_asset_inspection = data.get("allow_asset_inspection") is True
         self.locality = data.get("locality", {})
 
         changed = (
             self.ports != old_ports
             or self.allow_web_access != old_web
             or self.web_access_mode != old_mode
+            or self.allow_asset_inspection != old_inspection
         )
 
         if changed:
@@ -158,6 +174,7 @@ class BridgeConfig:
             "ports": self.ports,
             "allow_web_access": self.allow_web_access,
             "web_access_mode": self.web_access_mode,
+            "allow_asset_inspection": self.allow_asset_inspection,
         }
         if self.locality:
             msg["locality"] = self.locality
@@ -300,7 +317,7 @@ class GhostBridge:
                 "error": "Web access not enabled. Set allow_web_access: true in config.",
             }
             await ws.send(json.dumps(response))
-            log.warning(f"[{req_id}] Blocked web request (allow_web_access=false): {url}")
+            log.warning(f"[{req_id}] Blocked web request (allow_web_access=false): {_safe_log_url(url)}")
             return
 
         if is_localhost:
@@ -312,10 +329,10 @@ class GhostBridge:
                     "error": f"Port {port} not registered. Add it to your config.",
                 }
                 await ws.send(json.dumps(response))
-                log.warning(f"[{req_id}] Blocked — port {port} not registered: {url}")
+                log.warning(f"[{req_id}] Blocked — port {port} not registered: {_safe_log_url(url)}")
                 return
 
-        log.info(f"[{req_id}] {method} {url}{'  (web)' if not is_localhost else ''}")
+        log.info(f"[{req_id}] {method} {_safe_log_url(url)}{'  (web)' if not is_localhost else ''}")
 
         try:
             resp = await self._http_client.request(
@@ -335,29 +352,29 @@ class GhostBridge:
 
             log.info(f"[{req_id}] → {resp.status_code} ({len(resp.text)} chars)")
 
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             response = {
                 "type": "error",
                 "id": req_id,
-                "error": f"Connection refused: {e}",
+                "error": "Connection refused",
             }
-            log.error(f"[{req_id}] → Connection refused: {url}")
+            log.error(f"[{req_id}] → Connection refused: {_safe_log_url(url)}")
 
         except httpx.TimeoutException:
             response = {
                 "type": "error",
                 "id": req_id,
-                "error": f"Timeout fetching {url}",
+                "error": f"Timeout fetching {_safe_log_url(url)}",
             }
-            log.error(f"[{req_id}] → Timeout: {url}")
+            log.error(f"[{req_id}] → Timeout: {_safe_log_url(url)}")
 
         except Exception as e:
             response = {
                 "type": "error",
                 "id": req_id,
-                "error": f"{type(e).__name__}: {e}",
+                "error": type(e).__name__,
             }
-            log.error(f"[{req_id}] → Error: {e}")
+            log.error(f"[{req_id}] → Error: {type(e).__name__}")
 
         try:
             await ws.send(json.dumps(response))
@@ -416,6 +433,10 @@ Examples:
         help="Allow GhostMCP to route web requests through this machine",
     )
     parser.add_argument(
+        "--allow-asset-inspection", action="store_true",
+        help="Allow metadata-only asset inspection of registered local ports (also requires inspect_assets per call)",
+    )
+    parser.add_argument(
         "--proxy", action="store_true",
         help="Run as MCP stdio proxy (for opencode 'type: local' integration)",
     )
@@ -454,6 +475,9 @@ Examples:
     if not config.server_url:
         parser.error("No server URL specified. Set 'server' in config or use --connect")
         return
+
+    if args.allow_asset_inspection:
+        config.allow_asset_inspection = True
 
     # Dispatch to proxy mode or bridge-only mode
     if args.proxy:

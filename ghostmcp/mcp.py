@@ -153,7 +153,8 @@ async def _detect_locality(ip: str) -> dict:
 
 
 async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
-                            body: str = None, requesting_client: str = "") -> dict:
+                            body: str = None, requesting_client: str = "",
+                            bridge_client: str = "") -> dict:
     """Route an HTTP request through a connected bridge client.
     
     Returns dict with 'status', 'headers', 'body' on success,
@@ -163,8 +164,10 @@ async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
     is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
 
     if is_localhost:
-        port = parsed.port or 80
-        client_id = _find_bridge_for_port(port)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        client_id = bridge_client or _find_bridge_for_port(port)
+        if bridge_client and port not in _bridge_clients.get(bridge_client, {}).get("ports", []):
+            return {"error": "Bridge no longer registered for this port"}
         if not client_id:
             return {"error": f"No bridge client has port {port} registered. "
                     f"Run: python3 ghost_bridge.py --connect ws://<ghostmcp>/bridge --ports {port}"}
@@ -208,9 +211,9 @@ async def _fetch_via_bridge(url: str, method: str = "GET", headers: dict = None,
         return result
 
     except asyncio.TimeoutError:
-        return {"error": f"Bridge request timed out after 30s: {url}"}
+        return {"error": "Bridge request timed out after 30s"}
     except Exception as e:
-        return {"error": f"Bridge request failed: {e}"}
+        return {"error": f"Bridge request failed: {type(e).__name__}"}
     finally:
         _bridge_pending.pop(req_id, None)
 
@@ -1793,6 +1796,9 @@ async def ghost_cert(
         "screenshot_inline": {"type": "boolean", "description": "Return the screenshot inline as an image the client can display (base64 PNG). Default True when screenshot is taken. Large shots over ~4MB fall back to path-only.", "default": True},
         "ignore_https": {"type": "boolean", "description": "Ignore TLS cert errors (self-signed/expired/name-mismatch). Default True so internal apps behind bad certs still render.", "default": True},
         "device": {"type": "string", "description": "Emulate a device by Playwright registry name (e.g. 'Pixel 7', 'iPhone 14 Pro Max', 'iPad Pro 11'). Sets viewport, device-scale-factor, mobile user-agent and touch. Omit for desktop 1920x1080. Unknown names return the list of available devices."},
+        "inspect_assets": {"type": "boolean", "description": "Opt in to bounded, redacted asset and network metadata as JSON instead of DOM/console. For bridged local pages, the local bridge must also enable allow_asset_inspection.", "default": False},
+        "asset_resource_type": {"type": "string", "description": "With inspect_assets: restrict returned requests to a resource type (e.g. image, media, document)."},
+        "asset_domain": {"type": "string", "description": "With inspect_assets: restrict returned requests and elements to an exact hostname."},
     },
 )
 async def ghost_render(
@@ -1804,6 +1810,9 @@ async def ghost_render(
     screenshot_inline: bool = True,
     ignore_https: bool = True,
     device: Optional[str] = None,
+    inspect_assets: bool = False,
+    asset_resource_type: Optional[str] = None,
+    asset_domain: Optional[str] = None,
 ) -> str:
     """Render a page with headless browser and capture console output."""
     
@@ -1817,7 +1826,12 @@ async def ghost_render(
 
         _target = _urlparse(url)
         _origin_host = _target.hostname
-        _origin_port = _target.port or 80
+        _origin_port = _target.port or (443 if _target.scheme == "https" else 80)
+        bridge_id = None
+        if inspect_assets:
+            bridge_id = _find_bridge_for_port(_origin_port)
+            if not bridge_id or not _bridge_clients.get(bridge_id, {}).get("allow_asset_inspection"):
+                return "Asset inspection unavailable: local bridge must opt in with allow_asset_inspection."
 
         # Headers that must not be forwarded into route.fulfill (the browser
         # recomputes them; passing encoded/length headers corrupts the body).
@@ -1826,11 +1840,23 @@ async def ghost_render(
 
         async def _bridge_route(route, request):
             try:
+                if inspect_assets and not _bridge_clients.get(bridge_id, {}).get("allow_asset_inspection"):
+                    await route.abort()
+                    return
+                if inspect_assets and _origin_port not in _bridge_clients.get(bridge_id, {}).get("ports", []):
+                    await route.abort()
+                    return
                 rp = _urlparse(request.url)
                 same_origin = (
-                    rp.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
-                    and (rp.port or 80) == _origin_port
+                    rp.hostname in ((_origin_host,) if inspect_assets else
+                                    ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"))
+                    and (not inspect_assets or rp.scheme == _target.scheme)
+                    and (rp.port or (443 if rp.scheme == "https" else 80)) == _origin_port
                 )
+                if inspect_assets and not same_origin:
+                    # A local bridge opt-in covers its registered port only.
+                    await route.abort()
+                    return
                 if not same_origin:
                     # External (CDN, fonts, etc.) — let the GhostMCP host fetch directly.
                     await route.continue_()
@@ -1840,6 +1866,7 @@ async def ghost_render(
                     method=request.method,
                     headers=dict(request.headers),
                     body=request.post_data,
+                    bridge_client=bridge_id or "",
                 )
                 if "error" in resp:
                     await route.abort()
@@ -1863,7 +1890,9 @@ async def ghost_render(
             execute_js=execute,
             capture_screenshot=screenshot,
             route_handler=_bridge_route,
+            ignore_https_errors=ignore_https,
             device=device,
+            inspect_assets=inspect_assets,
         )
         report.final_url = (report.final_url or url) + " (via bridge)"
     else:
@@ -1874,10 +1903,36 @@ async def ghost_render(
             capture_screenshot=screenshot,
             ignore_https_errors=ignore_https,
             device=device,
+            inspect_assets=inspect_assets,
         )
 
     if report.error:
         return f"Render error: {report.error}"
+
+    if inspect_assets:
+        data = report.asset_inspection or {"access_state": "unknown", "elements": [], "requests": []}
+        if asset_resource_type or asset_domain:
+            if asset_domain and (not re.fullmatch(r"[a-zA-Z0-9.:-]{1,255}", asset_domain)
+                                 or "://" in asset_domain):
+                return "Invalid asset_domain filter."
+            if asset_resource_type:
+                data["requests"] = [r for r in data.get("requests", [])
+                                    if r["resource_type"] == asset_resource_type]
+            if asset_domain:
+                from urllib.parse import urlsplit as _urlsplit
+                data["requests"] = [r for r in data.get("requests", [])
+                                    if _urlsplit(r["url"]["origin"]).hostname == asset_domain.lower()]
+                data["elements"] = [e for e in data.get("elements", [])
+                                    if _urlsplit(e["url"]["origin"]).hostname == asset_domain.lower()]
+            visible = {r["id"] for r in data.get("requests", [])}
+            for element in data.get("elements", []):
+                element["request_ids"] = [rid for rid in element["request_ids"] if rid in visible]
+                if not element["request_ids"]:
+                    element["evidence"] = "page_advertised_only"
+            for r in data.get("requests", []):
+                if r.get("redirected_from") not in visible:
+                    r["redirected_from"] = None
+        return json.dumps(data, ensure_ascii=True)
 
     lines = []
 
@@ -3896,6 +3951,7 @@ def build_server_app():
             ports = msg.get("ports", [])
             web_access = msg.get("allow_web_access", False)
             web_mode = msg.get("web_access_mode", "false")
+            allow_asset_inspection = msg.get("allow_asset_inspection") is True
             locality = msg.get("locality", {})
 
             # Auto-detect locality from client's source IP if not provided
@@ -3913,6 +3969,7 @@ def build_server_app():
                 "ports": ports,
                 "web_access": web_access,
                 "web_mode": web_mode,
+                "allow_asset_inspection": allow_asset_inspection,
                 "locality": locality,
             })
 
@@ -3944,12 +4001,14 @@ def build_server_app():
                     ports = msg.get("ports", [])
                     web_access = msg.get("allow_web_access", False)
                     web_mode = msg.get("web_access_mode", "false")
+                    allow_asset_inspection = msg.get("allow_asset_inspection") is True
                     locality = msg.get("locality", {})
                     _register_bridge(client_id, {
                         "ws": websocket,
                         "ports": ports,
                         "web_access": web_access,
                         "web_mode": web_mode,
+                        "allow_asset_inspection": allow_asset_inspection,
                         "locality": locality,
                     })
                     print(f"[GhostMCP] Bridge re-registered: {client_id} ports={ports}")

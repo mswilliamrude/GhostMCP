@@ -321,6 +321,21 @@ Comprehensive DNS reconnaissance via DNS-over-HTTPS (zero dependencies). SPF/DMA
 
 Render a web page using headless Chromium. Captures the rendered DOM (after JavaScript execution), console.log/error output, and uncaught JS errors. Essential for debugging SPAs (Vue, React, Angular) where raw HTML contains unresolved template syntax. Supports optional JavaScript execution and screenshots. **No API key required** (requires Playwright + Chromium installed).
 
+For one-shot asset inspection, pass `inspect_assets=true`. The result is a JSON
+string with page access state, media/document elements, opaque request IDs,
+matching evidence, and bounded request/response metadata (up to 100 requests
+and 60 elements). Paths and query strings are redacted; response bodies,
+headers, cookies, and raw console/DOM are not returned. Use
+`asset_resource_type` or `asset_domain` to filter results within a render;
+opaque IDs are only valid for correlation within that call. A one-off `execute`
+expression can select a variant before the inspection snapshot; multi-step
+sessions are planned separately. For local pages reached via the WebSocket
+bridge, the client must separately enable `allow_asset_inspection: true` in
+`client/ghost_client.yaml.example` (or `--allow-asset-inspection`) as well as
+the per-call `inspect_assets` flag. The base Docker image includes Chromium;
+run the fixture integration test in the app image with
+`python3 -m pytest tests/test_asset_inspection.py -m integration`.
+
 ---
 
 ### 4. People Search

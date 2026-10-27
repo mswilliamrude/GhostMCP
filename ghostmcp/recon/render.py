@@ -22,6 +22,7 @@ class RenderReport:
     screenshot_path: str | None = None
     error: str | None = None
     device_info: dict | None = None   # Effective emulation (name, viewport, DPR, mobile, touch)
+    asset_inspection: dict | None = None
 
 
 async def render_page(
@@ -34,6 +35,7 @@ async def render_page(
     route_handler=None,
     ignore_https_errors: bool = True,
     device: str | None = None,
+    inspect_assets: bool = False,
 ) -> RenderReport:
     """Render a page with headless Chromium and capture console output.
 
@@ -66,6 +68,10 @@ async def render_page(
         return RenderReport(url=url, error="Playwright not installed. Install with: pip install playwright && playwright install chromium")
 
     report = RenderReport(url=url)
+    recorder = None
+    if inspect_assets:
+        from .asset_inspection import AssetRecorder
+        recorder = AssetRecorder()
 
     try:
         # Import stealth module (optional — degrades gracefully)
@@ -106,9 +112,8 @@ async def render_page(
                     available = ", ".join(sorted(p.devices.keys()))
                     return RenderReport(
                         url=url,
-                        error=(
-                            f"Unknown device '{device}'. Available devices: {available}"
-                        ),
+                        error=("Unknown device" if inspect_assets else
+                               f"Unknown device '{device}'. Available devices: {available}"),
                     )
                 # Drop any desktop 'screen' from stealth/defaults — it would
                 # contradict the device's mobile viewport. Device profile wins
@@ -133,19 +138,26 @@ async def render_page(
             context = await browser.new_context(**ctx_options)
             page = await context.new_page()
 
+            if recorder is not None:
+                page.on("request", recorder.on_request)
+                page.on("response", recorder.on_response)
+                page.on("requestfailed", recorder.on_failed)
+
             # Apply stealth patches before navigation
             if _has_stealth:
                 await apply_stealth(page)
 
             # Capture console messages
-            page.on("console", lambda msg: (
-                report.console_errors.append(f"[{msg.type}] {msg.text}")
-                if msg.type in ("error", "warning")
-                else report.console_log.append(f"[{msg.type}] {msg.text}")
-            ))
+            if not inspect_assets:
+                page.on("console", lambda msg: (
+                    report.console_errors.append(f"[{msg.type}] {msg.text}")
+                    if msg.type in ("error", "warning")
+                    else report.console_log.append(f"[{msg.type}] {msg.text}")
+                ))
 
             # Capture JS errors (uncaught exceptions)
-            page.on("pageerror", lambda err: report.js_errors.append(str(err)))
+            if not inspect_assets:
+                page.on("pageerror", lambda err: report.js_errors.append(str(err)))
 
             # Install request router (e.g. proxy same-origin requests through a
             # connectivity bridge) so a real navigation works for isolated SPAs.
@@ -172,22 +184,36 @@ async def render_page(
             if execute_js:
                 try:
                     result = await page.evaluate(execute_js)
-                    report.console_log.append(f"[execute] Result: {result}")
+                    if not inspect_assets:
+                        report.console_log.append(f"[execute] Result: {result}")
                 except Exception as e:
-                    report.js_errors.append(f"[execute] {e}")
+                    if not inspect_assets:
+                        report.js_errors.append(f"[execute] {e}")
 
             # Get rendered HTML
-            report.rendered_html = await page.content()
+            if not inspect_assets:
+                report.rendered_html = await page.content()
             report.title = await page.title()
 
+            if recorder is not None:
+                try:
+                    report.asset_inspection = await recorder.finish(page, report)
+                except Exception:
+                    # A broken DOM/evaluation must not leak its raw URL in an error.
+                    report.asset_inspection = {
+                        "final_url": {"origin": "[redacted]", "path": "[redacted]"},
+                        "access_state": "unknown", "elements": [], "requests": [],
+                        "error": "inspection_unavailable",
+                    }
+
             # Screenshot
-            if capture_screenshot:
+            if capture_screenshot and not inspect_assets:
                 await page.screenshot(path=screenshot_path, full_page=True)
                 report.screenshot_path = screenshot_path
 
             await browser.close()
 
     except Exception as e:
-        report.error = f"{type(e).__name__}: {e}"
+        report.error = f"{type(e).__name__}" if inspect_assets else f"{type(e).__name__}: {e}"
 
     return report

@@ -31,6 +31,11 @@ ports:
   # - 3000
   # - 5173
 
+# Phase 1 metadata-only inspection on the listed local ports. Requires an
+# explicit ghost_render(inspect_assets=True) call as well. This is separate
+# from Phase 2's planned detailed browser inspection permission.
+allow_asset_inspection: false
+
 # =============================================================================
 # Web Access (Internet Connectivity for GhostMCP)
 # =============================================================================
